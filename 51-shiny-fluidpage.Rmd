@@ -1,0 +1,1084 @@
+---
+title: "51-Shiny-Fluidpage"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,arrow,leaflet,maps,ggplot2,ggrepel,usmap,usdata,
+               feather,tigris,sf,plotly,shiny,shinyWidgets,
+               maptools,sp,rgeos,shinydashboard,vroom,
+               viridis,rsconnect)
+
+```
+
+
+```{r}
+######################################################################################################
+#                                       LOAD DATA                                                   #
+######################################################################################################
+load('data/dashboard_data/dbdata_2017.RData')
+
+state_level_missing_plots_df <- vroom("data/missingness_data/state_level_missing_barplots_df.csv")
+county_missing_df <- vroom("data/missingness_data/county_missing_df.csv")
+
+```
+
+```{r}
+  ######################################################################################################
+  #                                     Helper Functions                                               #
+  ######################################################################################################
+
+## GLOBAL vars
+
+ORIENTATION <<- "National"
+state_vector <<- unique(state_level_missing_plots_df$LEA_STATE)
+
+## Convert lon & lat from click to state code
+## coord = dataframe with [lon, lat]
+  lonlat_to_state <- function(coord,
+                              states = spData::us_states,
+                              name_col = "STATEFP") {
+    ## Convert points data.frame to an sf POINTS object
+    pts <- st_as_sf(coord, coords = 1:2, crs = 4326)
+    
+    ## Transform spatial data to some planar coordinate system
+    ## (e.g. Web Mercator) as required for geometric operations
+    states <- st_transform(states, crs = 3857)
+    pts <- st_transform(pts, crs = 3857)
+    
+    ## Find names of state (if any) intersected by each point
+    state_names <- states[[name_col]]
+    ii <- as.integer(st_intersects(pts, states))
+    state_names[ii]
+  }
+## Create percent missing bar plots at the regional level
+#Write a function to plot missingess
+  plot_state_missingness <- function(df, group_in, year_in, region_in = NA) {
+  # Filter the data frame based on the desired group and region
+    if (is.na(region_in) == FALSE) {
+        df <- df %>%
+           filter(group == group_in) %>%
+           filter(year == year_in) %>%
+           filter(region == region_in)
+  } else {
+        df <- df %>%
+           filter(group == group_in) %>%
+           filter(year == year_in)
+  }
+  
+  # Plot the data using ggplot
+    plot <- ggplot(df, aes(x = reorder(LEA_STATE,percent_missing), y = percent_missing, fill = bound)) +
+                  geom_bar(   
+                           stat = "Identity", 
+                           position = position_stack(reverse = TRUE), 
+                           aes(text = sprintf("State: %s<br>Bound: %s<br>Percent of Youth Missing: %s", LEA_STATE, bound,                                              round(percent_missing*100,2)))
+                           ) +
+                  scale_y_continuous(name = "% Students Missing From Gifted Education", breaks = seq(0,1,.1), labels = function(x)                                    paste0(x*100, "%"), limits = c(0, 1)) +
+                  scale_fill_manual(breaks = c("Upper Bound", "Lower Bound"), values=c("gray68", "gold3")) +
+                  geom_hline(yintercept=.2, color = "red", size = 2)+
+                  coord_flip()+
+                  labs(
+                  title = paste(group_in, " Youth Missing From Gifted Identification", " ", year_in, "-", year_in + 1, sep = ""),
+                  y = "Percentage of Missing Students",
+                  x = ""
+                  ) +
+                  theme_bw()+
+                  theme(legend.title = element_blank())
+  
+# Return the plot with a ggplotly wrapper
+    return(ggplotly(plot, tooltip = "text"))
+ }
+  
+## Create a scatterplot for missingness on a county level
+  plot_county_missingness <- function(df, group_in, state_in) {
+# Filter the data frame based on the desired group and state
+      df <- df %>%
+           filter(group == group_in) %>%
+           filter(LEA_STATE == state_in)
+# Find the slope for the plots in each state
+      state_slope <- df[[1,15]]
+  
+# Plot the data using ggplot
+      plot <- ggplot(df, aes(x = group_enr_ct, y = group_missing_count_upper, color = group_missing_perc_upper)) +
+                geom_point(
+                aes(text = sprintf(paste("District Name: %s<br>Total Number of", group_in, "Students Enrolled: %s<br>Number of", group_in, "Students Missing From Gifted Education: %s<br>Percent of", group_in, "Students Missing From Gifted Education: %s"), NMCNTY, group_enr_ct, group_missing_count_upper, group_missing_perc_upper))
+                 ) +
+                geom_abline(intercept = 0, slope = state_slope, linetype = "dashed", size = .5) +
+                scale_color_viridis(option = "D", direction = -1) +
+                labs(
+                    title = paste(group_in, "Student Enrollment vs.", group_in, "Students Missing from Gifted Education in", state_in),
+                    y = paste("Number of", group_in, "Students Missing from Gifted Education"),
+                    x = paste("Number of ", group_in, " Students Enrolled in the District"),
+                    color = paste("Percent of", group_in, "Students Missing from Gifted Education")
+                ) +
+                theme_bw()
+  
+# Return the plot with a ggplotly wrapper
+     return(ggplotly(plot, tooltip = "text"))
+   
+} 
+  
+  
+```
+
+
+```{r}
+  ######################################################################################################
+  #                                             CSS                                                    #
+  ######################################################################################################
+
+css <- HTML(
+    ".navbar { background-color: #CCE0E6}"
+)
+```
+
+```{r}
+landingbody <- fluidPage("About",
+                          # --- Logo ---
+                          div(style="display: block;vertical-align:top; text-align: left",
+                              windowTitle = "Logo", 
+                              img(src = "logo.png", width = 250, height = 250)),
+                          tags$hr(style="border-top: dashed 1px"),
+                          # --- About paragraph -------
+                          box(title = h2("About GATEways"),
+                              width = 12,
+                              tags$div(
+                                  h4("Black students and students of color are underrepresented in Gifted and Talented Education (GATE) pograms. Research indicates there are 3.5 millions students missing from these programs nationwide. In this project we will build tools that will enable educators and policymakers to estimate the number of students denied access in their area, and to estimate the economic and societal impact of stronger and more inclusive policies. This project involves the creation of interactive visualization dashboards in Shiny, the building and training of predictive machine learning models, and the development of simulations to explore policy implications. Our partner is Prof. Gil Whiting, Associate Professor of African American and Diaspora Studies, Director of the Scholar Identity Institute. See the ", tags$a(href = "https://www.education.purdue.edu/geri/new-publications/gifted-education-in-the-united-states/", "System Failure Access Denied report.")
+                                  )
+                              )), 
+                          tags$br())
+```
+
+```{r}
+  ######################################################################################################
+  #                                          Missingness UI                                                 #
+  ######################################################################################################
+
+missingnessbody <- tabPanel('Missingness', 
+                       div(class = "outer",
+                           
+                           tags$head(
+                             includeCSS("styles.css")
+                           ),
+                           
+                           h2("Missingness National Map"),
+                           leafletOutput("missingness_heatmap",
+                                         width = "100%",
+                                         height = "100%"),
+                           
+                           absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE,
+                                         draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto",
+                                         width = 330, height = "auto",
+                                         
+                                         h2("Explorer panel"),
+                                         
+                                         selectInput("race_missing", "Race", choices = c("Overall",
+                                                                                 "AIAN", 
+                                                                                 "Asian",
+                                                                                 "Black",
+                                                                                 "Latinx",
+                                                                                 "NHPI",
+                                                                                 "White")),
+                                         selectInput("bound_status", "Bound Status", choices = c(  "Lower Bound",
+                                                                                                   "Upper Bound")),
+                                         actionButton(inputId = "reset", 
+                                                      label = "Reset map", class = "btn-primary")
+                           )
+                       )
+)
+
+```
+
+```{r}
+######################################################################################################
+#                                          Equity UI                                                 #
+######################################################################################################
+
+equitybody <- tabPanel('Equity', 
+                       div(class = "outer",
+                           
+                           tags$head(
+                             includeCSS("styles.css")
+                           ),
+                           
+                           h2("Equity National Map"),
+                           leafletOutput("equity_heatmap",
+                                         width = "100%",
+                                         height = "100%"),
+                           
+                           absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE,
+                                         draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto",
+                                         width = 330, height = "auto",
+                                         
+                                         h2("Explorer panel"),
+                                         
+                                         selectInput("race_equity", "Race", choices = c("AIAN", 
+                                                                                 "Asian",
+                                                                                 "Black",
+                                                                                 "Latinx",
+                                                                                 "NHPI",
+                                                                                 "White")),
+                                         selectInput("title_status_equity", "Title I Status", choices = c("Overall",
+                                                                                                   "Title I",
+                                                                                                   "Non-Title I")),
+                                         actionButton(inputId = "reset", 
+                                                      label = "Reset map", class = "btn-primary")
+                           )
+                       )
+)
+
+```
+
+```{r}
+
+######################################################################################################
+#                                          Access UI                                                 #
+######################################################################################################
+
+accessbody <- tabPanel('Access', 
+                       div(class = "outer",
+                           
+                           tags$head(
+                             includeCSS("styles.css")
+                           ),
+                           
+                           h2("Access National Map"),
+                           leafletOutput("access_heatmap",
+                                         width = "100%",
+                                         height = "100%"),
+                           
+                           absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE,
+                                         draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto",
+                                         width = 330, height = "auto",
+                                         
+                                         h2("Explorer panel"),
+                                         
+                                         selectInput("race_access", "Race", choices = c("AIAN", 
+                                                                                 "Asian",
+                                                                                 "Black",
+                                                                                 "Latinx",
+                                                                                 "NHPI",
+                                                                                 "White",
+                                                                                 "Two or more")),
+                                         selectInput("title_status_access", "Title I Status", choices = c("Overall",
+                                                                                                   "Title I",
+                                                                                                   "Non-Title I")),
+                                         actionButton(inputId = "reset", 
+                                                      label = "Reset map", class = "btn-primary")
+                           )
+                       )
+)
+```
+
+```{r}
+
+######################################################################################################
+#                                          Legal Mandates UI                                                 #
+######################################################################################################
+
+legalmandatesbody <- splitLayout(cellWidths = c("50%", "50%"), leafletOutput("mandates_heatmap"), plotlyOutput("plot")) 
+
+```
+
+```{r}
+
+######################################################################################################
+#                                          Region Multiples                                          #
+######################################################################################################
+
+region_miss_multi <- tabPanel('Region Missingness',
+                              
+                              h2("Region Missingness Graphs"),
+  
+  plotlyOutput("region_miss_plot1"),
+  
+  absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE,
+                draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto",
+                width = 330, height = "auto",
+                
+                h2("Explorer panel"),
+                
+                selectInput("reg_miss_select", "Region", choices = c("Southeast",
+                                                                                 "Southwest",
+                                                                                 "Pacific",
+                                                                     "Rocky Mountains",
+                                                                     "Northeast",
+                                                                     "Midwest",
+                                                                     "Nonctoniguous")),
+                
+                selectInput("race_reg_miss", "Race", choices = c("AIAN", 
+                                                               "Asian",
+                                                               "Black",
+                                                               "Latinx",
+                                                               "NHPI",
+                                                               "White",
+                                                               "Two or More"))
+                )
+  )
+
+county_miss_multi <- tabPanel('County Missingness',
+                              
+                              h2("County Missingness Graphs"),
+  
+ plotlyOutput("county_miss_plot1"),
+  
+  absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE,
+                draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto",
+                width = 330, height = "auto",
+                
+                h2("Explorer panel"),
+                
+                selectInput("state_miss_select", "State", choices = state_vector),
+                
+                selectInput("state_reg_miss", "Race", choices = c("AIAN", 
+                                                               "Asian",
+                                                               "Black",
+                                                               "Latinx",
+                                                               "NHPI",
+                                                               "White",
+                                                               "Two or More"))
+                )
+  )
+
+```
+
+
+```{r}
+  ######################################################################################################
+  #                                             NAVBAR                                                 #
+  ######################################################################################################
+
+ui <- navbarPage(title=strong("Gateways"),
+                 tabPanel('About', h2("Landing page"),landingbody),
+                 missingnessbody,
+                 equitybody,
+                 accessbody,
+                 tabPanel(("Legal Mandates"), h2("Legal Mandates tab content"),legalmandatesbody),
+                 region_miss_multi,
+                 county_miss_multi)
+
+
+```
+
+
+```{r}
+server <- function(input, output, session) {
+    ######################################################################################################
+  #                                           MISSINGNESS REGION GRAPHS                                 #
+  ######################################################################################################
+  
+  output$region_miss_plot1 <- renderPlotly(
+      plot_state_missingness(df = state_level_missing_plots_df, group_in = region_miss_plot1_race(), 
+                             year_in = 2017, region_in = region_miss_plot1_region())
+  )
+  
+  region_miss_plot1_race <- reactive({
+    race = "AIAN"
+    if(is.null(input$race_reg_miss)){
+      return(race)
+    }else{
+      race <- input$race_reg_miss
+      return(race)
+    }
+   
+  })
+  
+  region_miss_plot1_region <- reactive({
+        region = "Southeast"
+    if(is.null(input$reg_miss_select)){
+      return(region)
+    }else{
+      region <- input$reg_miss_select
+      return(region)
+    }
+  })
+  
+  output$county_miss_plot1 <- renderPlotly(
+      plot_county_missingness(df = county_missing_df, group_in = county_miss_plot1_race(),
+                              state_in = county_miss_plot1_state())
+  )
+  
+  county_miss_plot1_race <- reactive({
+    race = "AIAN"
+    if(is.null(input$state_reg_miss)){
+      return(race)
+    }else{
+      race <- input$state_reg_miss
+      return(race)
+    }
+   
+  })
+  
+  county_miss_plot1_state <- reactive({
+        region = "Tennessee"
+    if(is.null(input$state_miss_select)){
+      return(region)
+    }else{
+      region <- input$state_miss_select
+      return(region)
+    }
+  })
+  
+  ######################################################################################################
+  #                                           MISSINGNESS Tab                                               #
+  ######################################################################################################
+  
+  #### Heatmap ####
+  # Filter data by race & Title I status
+  heatmap_by_race <- reactive({
+    column_select <- "Percent Missing Lower Bound Overall"
+    
+    # Race filter
+    race_filter <- ""
+    if(input$race_missing == "AIAN"){
+      race_filter <- "AIAN"
+    }else if(input$race_missing == "Asian"){
+      race_filter <- "Asian"
+    }else if(input$race_missing == "Black"){
+      race_filter <- "Black"
+    }else if(input$race_missing == "Latinx"){
+      race_filter <- "Latinx"
+    }else if(input$race_missing == "NHPI"){
+      race_filter <- "NHPI"
+    }else if(input$race_missing == "White"){
+      race_filter <- "White"
+    }else if(input$race_missing == "TMR"){
+      race_filter <- "TMR"
+    }else{
+      race_filter <- "Overall"
+    }
+    
+    # bound filter
+    bound_filter <- ""
+    
+    if(input$bound_status == "Upper Bound"){
+      bound_filter <- "Upper Bound"
+    }else{
+      bound_filter <- "Lower Bound"
+    }
+  
+    column_select <- paste("Percent Missing",bound_filter,race_filter)
+    
+    #return
+    column_select
+  })
+  
+  # Plot US Heatmap for access
+  output$missingness_heatmap <- renderLeaflet({
+    
+    ## Get column filter from reactive panel
+    column_filter <- heatmap_by_race()
+    
+    ## Generate color panel & legend bins
+    missingness_bins <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
+    pal <- colorBin("RdYlGn", domain = states_coef[[column_filter]], bins = missingness_bins, reverse = TRUE)
+    
+    ## Generate label HTML
+    lbls_natnl <-
+      sprintf("<strong><i>%s</i></strong><br/>
+          Percent Missing: %s<br/>
+          <i>Click to view regional comparison</i>", 
+          states_coef$NAME, 
+          states_coef[[column_filter]] * 100) %>%  
+      lapply(htmltools::HTML)
+    
+    ## Generate leaflet map
+    leaflet()%>%
+      addProviderTiles("Stamen.TonerLite")%>%
+      setView(lat = 39.8283, lng = -98.5795, zoom = 4) %>%
+      addPolygons(
+        layerId = states_coef$NAME,
+        data = states_coef,
+        fillColor = ~pal(states_coef[[column_filter]]),
+        smoothFactor = 0.2,
+        fillOpacity = 0.3,
+        weight = 1,
+        highlight = highlightOptions(
+          weight = 5,
+          color = "blue",
+          bringToFront = TRUE),
+        label = lbls_natnl,
+        labelOptions = labelOptions(
+          style = list("font-weight" = "normal", padding = "3px 8px"),
+          textsize = "15px",
+          direction = "auto"))%>%
+      addLegend(position = "bottomleft",
+                pal = pal,
+                values = states_coef[[column_filter]],
+                title = column_filter,
+                opacity = 1)
+    
+  })
+  
+  ## Observer: click state -> regional map / county map
+  observeEvent(input$missingness_heatmap_shape_click, {
+    click <- input$missingness_heatmap_shape_click
+    if(is.null(click))
+      return()
+    
+    if(ORIENTATION == "National"){
+      ## Get state from lat lon
+      state_selector <- lonlat_to_state(data.frame(click$lng, click$lat), states_coef)
+      regional_selector <- states_coef$REGION.y[states_coef$STATEFP == state_selector]
+      regional_coef <- states_coef[states_coef$REGION.y == regional_selector,]
+      
+      ## Check reactive component again
+      ## Get column filter from reactive panel
+      column_filter <- heatmap_by_race()
+      
+      ## Generate color panel & legend bins
+      missingness_bins <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
+      pal <- colorBin("RdYlGn", domain = regional_coef[[column_filter]], bins = missingness_bins, reverse = TRUE)
+      
+      ## Generate new regional label HTML
+      lbls_regnl <-
+        sprintf("<strong><i>%s</i></strong><br/>
+          Percent Missingness: %s<br/>
+          <i>Click to view county comparison</i>", 
+          regional_coef$NAME, 
+          regional_coef[[column_filter]] * 100) %>%  
+        lapply(htmltools::HTML)
+      
+      ## Update leaflet with proxy
+      leafletProxy("missingness_heatmap") %>%
+        removeShape(layerId = states_coef$NAME) %>%
+        removeShape(layerId = regional_coef$NAME) %>%
+        setView(lat = click$lat, lng = click$lng, zoom = 5) %>%
+        addPolygons(
+          layerId = regional_coef$NAME,
+          data = regional_coef,
+          fillColor = ~pal(regional_coef[[column_filter]]),
+          weight = 1,
+          highlight = highlightOptions(
+            weight = 5,
+            color = "blue",
+            bringToFront = TRUE),
+          label = lbls_regnl,
+          labelOptions = labelOptions(
+            style = list("font-weight" = "normal", padding = "3px 8px"),
+            textsize = "15px",
+            direction = "auto"))
+      
+      ORIENTATION <<- "Regional"
+      
+    }else{
+      state_selector <- lonlat_to_state(data.frame(click$lng, click$lat), states_coef)
+      regional_selector <- states_coef$REGION.y[states_coef$STATEFP == state_selector]
+      regional_coef <- states_coef[states_coef$REGION.y == regional_selector,]
+      
+      county_map <- counties_coef[counties_coef$STATEFP == state_selector,]
+      
+      
+      ## Check reactive component again
+      ## Get column filter from reactive panel
+      column_filter <- heatmap_by_race()
+      
+      ## Generate color panel & legend bins
+      missingness_bins <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
+      pal <- colorBin("RdYlGn", domain = county_map[[column_filter]], bins = missingness_bins, reverse = TRUE)
+      
+      # Generate new regional label HTML
+      lbls_cnty <-
+        sprintf("<strong><i>%s</i></strong><br/>
+          Percent Missingness: %s<br/>
+          <i>Click to view county comparison</i>",
+          county_map$NAMELSAD,
+          county_map[[column_filter]] * 100) %>%
+        lapply(htmltools::HTML)
+      
+      
+      leafletProxy("missingness_heatmap") %>%
+        removeShape(layerId = states_coef$NAME) %>%
+        removeShape(layerId = regional_coef$NAME) %>%
+        setView(lat = click$lat, lng = click$lng, zoom = 6) %>%
+        addPolygons(
+          data = county_map,
+          fillColor = ~pal(county_map[[column_filter]]),
+          weight = 1,
+          highlight = highlightOptions(
+            weight = 5,
+            color = "blue",
+            bringToFront = TRUE),
+          label = lbls_cnty,
+          labelOptions = labelOptions(
+            style = list("font-weight" = "normal", padding = "3px 8px"),
+            textsize = "15px",
+            direction = "auto"))
+      
+      ORIENTATION <<- "County"
+    }
+    
+    
+    
+  })
+  
+  # ## Observer: click state -> county map
+   # observeEvent(input$missingness_heatmap_shape_click, {
+   #   click <- input$missingness_heatmap_shape_click
+   #   if(is.null(click))
+   #     return()
+   #   
+   #   state_selector <- lonlat_to_state(data.frame(click$lng, click$lat), states_coef)
+   #   
+   #   county_map <- counties_coef[counties_coef$STATEFP == state_selector,]
+   #   
+   #       
+   #  ## Check reactive component again
+   #  ## Get column filter from reactive panel
+   #  column_filter <- heatmap_by_race()
+   #  
+   #  ## Generate color panel & legend bins
+   #  missingness_bins <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
+   #  pal <- colorBin("RdYlGn", domain = counties_coef[[column_filter]], bins = missingness_bins, reverse = TRUE)
+   #  
+   #  ## Generate new regional label HTML
+   #  lbls_cnty <-
+   #    sprintf("<strong><i>%s</i></strong><br/>
+   #        Percent Missingness: %s<br/>
+   #        <i>Click to view county comparison</i>", 
+   #        counties_coef$NAMELSAD, 
+   #        counties_coef[[column_filter]]) %>%  
+   #    lapply(htmltools::HTML)
+   #  
+   #   
+   #   leafletProxy("missingness_heatmap") %>%
+   #     setView(lat = click$lat, lng = click$lng, zoom = 6) %>%
+   #     addPolygons(
+   #       data = county_map,
+   #       color = "grey",
+   #       fillColor = ~pal(counties_coef[[column_filter]]),
+   #       weight = 1,
+   #       highlight = highlightOptions(
+   #         weight = 5,
+   #         color = "blue",
+   #         bringToFront = TRUE),
+   #         labels = lbls_cnty)
+   #   
+   # })
+    
+  ######################################################################################################
+  #                                           EQUITY Tab                                               #
+  ######################################################################################################
+  
+  #### Heatmap ####
+
+  # Filter data by race & Title I status
+  heatmap_by_race_title_i <- reactive({
+    column_select <- "Equity (RI) by Race Overall Latinx"
+    
+    # Race filter
+    race_filter <- ""
+
+    if(input$race_equity == "AIAN"){
+      race_filter <- "AIAN"
+    }else if(input$race_equity == "Asian"){
+      race_filter <- "Asian"
+    }else if(input$race_equity == "Black"){
+      race_filter <- "Black"
+    }else if(input$race_equity == "NHPI"){
+      race_filter <- "NHPI"
+    }else if(input$race_equity == "White"){
+      race_filter <- "White"
+    }else if(input$race_equity == "Two or more"){
+      race_filter <- "TMR"
+    }else{
+      race_filter <- "Latinx"
+    }
+    
+    # Title I filter
+    title_filter <- ""
+    
+    if(input$title_status_equity == "Title I"){
+      title_filter <- "Title I"
+    }else if(input$title_status_equity == "Non-Title I"){
+      title_filter <- "Non-Title I"
+    }else{
+      title_filter <- "Overall"
+    }
+  
+    column_select <- paste("Equity (RI) by Race",title_filter,race_filter)
+    
+    #return
+    column_select
+  })
+  
+  # Plot US Heatmap for access
+  output$equity_heatmap <- renderLeaflet({
+    
+    ## Get column filter from reactive panel
+    column_filter <- heatmap_by_race_title_i()
+    
+    ## Generate color panel & legend bins
+    bins <- c(0, 0.65, 0.7, 0.8, 0.9, 3)
+    pal <- colorBin("RdYlGn", domain = states_coef[[column_filter]], bins = bins)
+    
+    ## Generate label HTML
+    lbls_natnl <-
+      sprintf("<strong><i>%s</i></strong><br/>
+          Equity Ratio, Non-Title I & Title I: %s<br/>
+          Subgroup Equity (RI): %s<br/>
+          <i>Click to view regional comparison</i>", 
+          states_coef$NAME, 
+          states_coef$`Equity Ratio between Non-Title I and Title I schools`,
+          states_coef[[column_filter]]) %>%  
+      lapply(htmltools::HTML)
+    
+    ## Generate leaflet map
+    leaflet()%>%
+      addProviderTiles("Stamen.TonerLite")%>%
+      setView(lat = 39.8283, lng = -98.5795, zoom = 4) %>%
+      addPolygons(
+        layerId = states_coef$NAME,
+        data = states_coef,
+        fillColor = ~pal(states_coef[[column_filter]]),
+        smoothFactor = 0.2,
+        fillOpacity = 0.3,
+        weight = 1,
+        highlight = highlightOptions(
+          weight = 5,
+          color = "blue",
+          bringToFront = TRUE),
+        label = lbls_natnl,
+        labelOptions = labelOptions(
+          style = list("font-weight" = "normal", padding = "3px 8px"),
+          textsize = "15px",
+          direction = "auto"))%>%
+      addLegend(position = "bottomleft",
+                pal = pal,
+                values = states_coef[[column_filter]],
+                title = column_filter,
+                opacity = 1)
+    
+  })
+  
+  ## Observer: click state -> regional map
+  observeEvent(input$equity_heatmap_shape_click, {
+    click <- input$equity_heatmap_shape_click
+    if(is.null(click))
+      return()
+    
+    ## Get state from lat lon
+    state_selector <- lonlat_to_state(data.frame(click$lng, click$lat), states_coef)
+    regional_selector <- states_coef$REGION.y[states_coef$STATEFP == state_selector]
+    regional_coef <- states_coef[states_coef$REGION.y == regional_selector,]
+    
+    ## Check reactive component again
+    ## Get column filter from reactive panel
+    column_filter <- heatmap_by_race_title_i()
+    
+    ## Generate color panel & legend bins
+    bins <- c(0, 0.65, 0.7, 0.8, 0.9, 3)
+    pal <- colorBin("RdYlGn", domain = regional_coef[[column_filter]], bins = bins)
+    
+    ## Generate new regional label HTML
+    lbls_regnl <-
+      sprintf("<strong><i>%s</i></strong><br/>
+          Equity Ratio, Non-Title I & Title I: %s<br/>
+          Subgroup Equity (RI): %s<br/>
+          <i>Click to view county comparison</i>", 
+          regional_coef$NAME, 
+          regional_coef$`Equity Ratio between Non-Title I and Title I schools`,
+          regional_coef[[column_filter]]) %>%  
+      lapply(htmltools::HTML)
+    
+    ## Update leaflet with proxy
+    leafletProxy("equity_heatmap") %>%
+      removeShape(layerId = states_coef$NAME) %>%
+      removeShape(layerId = regional_coef$NAME) %>%
+      setView(lat = click$lat, lng = click$lng, zoom = 5) %>%
+      addPolygons(
+        layerId = regional_coef$NAME,
+        data = regional_coef,
+        fillColor = ~pal(regional_coef[[column_filter]]),
+        weight = 1,
+        highlight = highlightOptions(
+          weight = 5,
+          color = "blue",
+          bringToFront = TRUE),
+        label = lbls_regnl,
+        labelOptions = labelOptions(
+          style = list("font-weight" = "normal", padding = "3px 8px"),
+          textsize = "15px",
+          direction = "auto"))
+    
+  })
+  
+  # ## Observer: click state -> county map
+  # observeEvent(input$equity_heatmap_shape_click, {
+  #   click <- input$equity_heatmap_shape_click
+  #   if(is.null(click))
+  #     return()
+  #   
+  #   state_selector <- lonlat_to_state(data.frame(click$lng, click$lat), states_coef)
+  #   
+  #   county_map <- counties_coef[counties_coef$STATEFP == state_selector,]
+  #   
+  #   leafletProxy("equity_heatmap") %>%
+  #     setView(lat = click$lat, lng = click$lng, zoom = 6) %>%
+  #     addPolygons(
+  #       data = county_map,
+  #       color = "grey",
+  #       fillColor = NA,
+  #       weight = 1,
+  #       highlight = highlightOptions(
+  #         weight = 5,
+  #         color = "blue",
+  #         bringToFront = TRUE))
+  #   
+  # })
+  # 
+  ######################################################################################################
+  #                                           ACCESS Tab                                               #
+  ######################################################################################################
+
+  #### Heatmap ####
+
+  # Filter data by race & Title I status
+  heatmap_access_racet1 <- reactive({
+    column_select <- "Gifted Access Percentage by Race Overall Latinx"
+    
+    # Race filter
+    race_filter <- ""
+
+    if(input$race_access == "AIAN"){
+      race_filter <- "AIAN"
+    }else if(input$race_access == "Asian"){
+      race_filter <- "Asian"
+    }else if(input$race_access == "Black"){
+      race_filter <- "Black"
+    }else if(input$race_access == "NHPI"){
+      race_filter <- "NHPI"
+    }else if(input$race_access == "White"){
+      race_filter <- "White"
+    }else if(input$race_access == "Two or more"){
+      race_filter <- "TMR"
+    }else{
+      race_filter <- "Latinx"
+    }
+    
+    # Title I filter
+    title_filter <- ""
+    
+    if(input$title_status_access == "Title I"){
+      title_filter <- "Title I"
+    }else if(input$title_status_access == "Non-Title I"){
+      title_filter <- "Non-Title I"
+    }else{
+      title_filter <- "Overall"
+    }
+
+
+    column_select <- paste("Gifted Access Percentage by Race",title_filter,race_filter)
+    
+    
+    #return
+    column_select
+  })
+
+  # Plot US Heatmap for access
+  output$access_heatmap <- renderLeaflet({
+    
+    ## Get column filter from reactive panel
+    column_filter <- heatmap_access_racet1()
+    
+    ## Generate color panel & legend bins
+    bins <- c(0, 5, 10, 20, 40)
+    pal <- colorBin("RdYlGn", domain = states_coef[[column_filter]], bins = bins)
+    
+    ## Generate label HTML
+    lbls_natnl <-
+      sprintf("<strong><i>%s</i></strong><br/>
+          Overall Gifted Access Percentage: %s<br/>
+          Subgroup Gifted Access Percentage: %s<br/>
+          <i>Click to view regional comparison</i>", 
+          states_coef$NAME, 
+          states_coef$Access,
+          states_coef[[column_filter]]) %>%  
+      lapply(htmltools::HTML)
+    
+    ## Generate leaflet map
+    leaflet()%>%
+      addProviderTiles("Stamen.TonerLite")%>%
+      setView(lat = 39.8283, lng = -98.5795, zoom = 4) %>%
+      addPolygons(
+        layerId = states_coef$NAME,
+        data = states_coef,
+        fillColor = ~pal(states_coef[[column_filter]]),
+        smoothFactor = 0.2,
+        fillOpacity = 0.3,
+        weight = 1,
+        highlight = highlightOptions(
+          weight = 5,
+          color = "blue",
+          bringToFront = TRUE),
+        label = lbls_natnl,
+        labelOptions = labelOptions(
+          style = list("font-weight" = "normal", padding = "3px 8px"),
+          textsize = "15px",
+          direction = "auto"))%>%
+      addLegend(position = "bottomleft",
+                pal = pal,
+                values = states_coef[[column_filter]],
+                title = column_filter,
+                opacity = 1)
+    
+  })
+
+  ## Observer: click state -> regional map
+  observeEvent(input$access_heatmap_shape_click, {
+    click <- input$access_heatmap_shape_click
+    if(is.null(click))
+      return()
+    
+    if(ORIENTATION == "National"){
+      ## Get state from lat lon
+      state_selector <- lonlat_to_state(data.frame(click$lng, click$lat), states_coef)
+      regional_selector <- states_coef$REGION.y[states_coef$STATEFP == state_selector]
+      regional_coef <- states_coef[states_coef$REGION.y == regional_selector,]
+      
+      ## Check reactive component again
+      ## Get column filter from reactive panel
+      column_filter <- heatmap_access_racet1()
+      
+      ## Generate color panel & legend bins
+      bins <- c(0, 5, 10, 20, 40)
+      pal <- colorBin("RdYlGn", domain = regional_coef[[column_filter]], bins = bins)
+      
+      ## Generate new regional label HTML
+      lbls_regnl <-
+        sprintf("<strong><i>%s</i></strong><br/>
+            Overall Gifted Access Percentage: %s<br/>
+            Subgroup Gifted Access Percentage: %s<br/>
+            <i>Click to view county comparison</i>", 
+            regional_coef$NAME,
+            regional_coef$Access,
+            regional_coef[[column_filter]]) %>%  
+        lapply(htmltools::HTML)
+      
+      ## Update leaflet with proxy
+      leafletProxy("access_heatmap") %>%
+        removeShape(layerId = states_coef$NAME) %>%
+        removeShape(layerId = regional_coef$NAME) %>%
+        setView(lat = click$lat, lng = click$lng, zoom = 5) %>%
+        addPolygons(
+          layerId = regional_coef$NAME,
+          data = regional_coef,
+          fillColor = ~pal(regional_coef[[column_filter]]),
+          weight = 1,
+          highlight = highlightOptions(
+            weight = 5,
+            color = "blue",
+            bringToFront = TRUE),
+          label = lbls_regnl,
+          labelOptions = labelOptions(
+            style = list("font-weight" = "normal", padding = "3px 8px"),
+            textsize = "15px",
+            direction = "auto"))
+
+      ORIENTATION <<- "Regional"
+
+    }else{
+      state_selector <- lonlat_to_state(data.frame(click$lng, click$lat), states_coef)
+      regional_selector <- states_coef$REGION.y[states_coef$STATEFP == state_selector]
+      regional_coef <- states_coef[states_coef$REGION.y == regional_selector,]
+
+      county_map <- counties_coef[counties_coef$STATEFP == state_selector,]
+      
+      ## Check reactive component again
+      ## Get column filter from reactive panel
+      column_filter <- heatmap_access_racet1()
+      
+      ## Generate color panel & legend bins
+      bins <- c(0, 5, 10, 20, 40)
+      pal <- colorBin("RdYlGn", domain = county_map[[column_filter]], bins = bins)
+      
+      ## Generate new regional label HTML
+      lbls_cnty <-
+        sprintf("<strong><i>%s</i></strong><br/>
+            Overall Gifted Access Percentage: %s<br/>
+            Subgroup Gifted Access Percentage: %s<br/>", 
+            county_map$NAMELSAD,
+            county_map$Access,
+            county_map[[column_filter]]) %>%  
+        lapply(htmltools::HTML)
+      
+      ## Update leaflet with proxy
+      leafletProxy("access_heatmap") %>%
+        removeShape(layerId = states_coef$NAME) %>%
+        removeShape(layerId = regional_coef$NAME) %>%
+        setView(lat = click$lat, lng = click$lng, zoom = 6) %>%
+        addPolygons(
+          #layerId = regional_coef$NAME,
+          data = county_map,
+          fillColor = ~pal(county_map[[column_filter]]),
+          weight = 1,
+          highlight = highlightOptions(
+            weight = 5,
+            color = "blue",
+            bringToFront = TRUE),
+          label = lbls_cnty,
+          labelOptions = labelOptions(
+            style = list("font-weight" = "normal", padding = "3px 8px"),
+            textsize = "15px",
+            direction = "auto"))
+
+        ORIENTATION <<- "County"
+    }
+    
+  })
+  
+  ######################################################################################################
+  #                                           LEGAL MANDATES Tab                                               #
+  ######################################################################################################
+  
+  output$plot <- renderPlotly(
+    legal_mandates_plot <- ggplot(NAGC_ploting_df, aes(x = description, y = count, fill = funding_description, text = sprintf("Number of States: %s<br>%s<br>States: %s", count, funding_description, states))) +
+      geom_bar(stat = "Identity") +
+      scale_y_continuous(breaks = seq(0,25,5), limits = c(0, 26)) +
+      scale_fill_manual(breaks = c("State Funding (Partial or Full)", "No State Funding"), 
+                        values=c("navyblue", "darkorange1")) +
+      labs(
+        title = "Legal Mandates and State Funding For Gifted Education",
+        subtitle = "From the NAGC's 2018-2019 State of the States in Gifted Education",
+        y = "Number of states",
+        x = ""
+      ) +
+      theme_linedraw() +
+      theme(legend.title = element_blank(),
+            panel.grid.major.x = element_blank())
+  )
+  ######
+  output$mandates_heatmap <- renderLeaflet({
+    
+    leaflet()%>%
+      addProviderTiles("Stamen.TonerLite")%>%
+      setView(lat = 39.8283, lng = -98.5795, zoom = 4) %>%
+      addPolygons(
+        data = states_coef,
+        smoothFactor = 0.2,
+        weight = 1,
+        highlight = highlightOptions(
+          weight = 5,
+          color = "red",
+          bringToFront = TRUE),
+        popup = paste("State: ", states_coef$NAME, "<br>",
+                      "Mandates: ", NAGC_states$law_description, "<br>",
+                      "Funding: ", NAGC_states$funding_description, "<br>"))
+  })
+}
+```
+
+
+
+```{r}
+shinyApp(ui, server)
+```
+
+

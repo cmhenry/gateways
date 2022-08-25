@@ -1,0 +1,251 @@
+---
+title: "28-Missingness-Plotting-Functions"
+output: html_notebook
+---
+
+The purpose of this notebook is to create functions to plot youth missingness on a state and district level. On the state level, we will recreate the youth missing graphics from Figures 16-22 on Pages 115-118 of the Access Denied Report. On the district level, we will create plots in accordance to how our stakeholders feel the missingness data can be displayed most effectively. 
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2, plotly, viridis)
+```
+
+In order to recreate the youth missingness graphics from the Access denied report we need to use the ocr_15_wide and ocr_17_wide data frame to calculate youth missingness for each demographic group in the report. The calculations to get the data frames we used to plot missingness can be found in all of the RMD files starting with 27. the next tag after 27 shows us the demographic group that is being plotted.
+
+# Load Data
+
+We have used these other markdown files to create two mega tables for the shiny app to reference when it plots the missingness data. One megatable for state data and one megatable for district data. We will load that megatable in from Box now. 
+
+```{r}
+#Load missingness megatable from the box
+state_level_missing_plots_df <- read_csv("data/missingness_data/state_level_missing_barplots_df.csv")
+county_missing_df <- read_csv("data/missingness_data/county_missing_df.csv")
+```
+
+# State Level
+
+First we want to plot the data on a state level. We will write a plotting function right here and then test it out.
+
+# Plotting Function
+
+In this block of code I will write a function where the inputs are a dataframe, a year, and a demographic group and the output is a plotly graph to visualize the number of youth missing from gifted education in each state for the desired demographic group. 
+
+```{r}
+#Write a function to plot missingess
+
+plot_state_missingness <- function(df, group_in, year_in, region_in = NA) {
+# Filter the data frame based on the desired group and region
+  if (is.na(region_in) == FALSE) {
+  df <- df %>%
+           filter(group == group_in) %>%
+           filter(year == year_in) %>%
+           filter(region == region_in)
+  } else {
+  df <- df %>%
+           filter(group == group_in) %>%
+           filter(year == year_in)
+  }
+  
+# Plot the data using ggplot
+  plot <- ggplot(df, aes(x = reorder(LEA_STATE,percent_missing), y = percent_missing, fill = bound)) +
+   geom_bar(   
+      stat = "Identity", 
+      position = position_stack(reverse = TRUE), 
+      aes(text = sprintf("State: %s<br>Bound: %s<br>Percent of Youth Missing: %s", LEA_STATE, bound,                                              round(percent_missing*100,2)))
+  ) +
+  scale_y_continuous(name = "% Students Missing From Gifted Education", breaks = seq(0,1,.1), labels = function(x)                                    paste0(x*100, "%"), limits = c(0, 1)) +
+  scale_fill_manual(breaks = c("Upper Bound", "Lower Bound"), 
+                    values=c("gray68", "gold3")) +
+  geom_hline(yintercept=.2, color = "red", size = 2)+
+  coord_flip()+
+  labs(
+    title = paste(group_in, " Youth Missing From Gifted Identification", " ", year_in, "-", year_in + 1, sep = ""),
+    y = "Percentage of Missing Students",
+    x = ""
+  ) +
+  theme_bw()+
+  theme(legend.title = element_blank())
+  
+# Return the plot with a ggplotly wrapper
+  return(ggplotly(plot, tooltip = "text"))
+   
+}
+```
+
+# Plot Youth Missingness on the state level
+
+With the function we just created plot_missingness() we can plot youth missingness for different demographics for different years. Let's test it below.
+
+```{r, fig.height=30}
+# Use the function to plot the AIAN missingness
+plot_state_missingness(state_level_missing_plots_df, "White", 2017, "Southwest")
+```
+
+##################################################################################################################################################################################################################################################################
+
+# District level
+
+Now that we have plotted state level data we need to plot missingness on a district level. For this we will write two different functions.
+
+# District Plotting Functions
+
+This first function takes in a data frame, a demographic group, and a state then returns a scatterplot. 
+
+```{r}
+#Write a function to plot missingness on a district level
+
+plot_district_missingness <- function(df, group_in, state_in) {
+# Filter the data frame based on the desired group and state
+  df <- df %>%
+           filter(group == group_in) %>%
+           filter(LEA_STATE == state_in)
+# Find the slope for the plots in each state
+  state_slope <- df[[1,16]]
+  
+# Plot the data using ggplot
+  plot <- ggplot(df, aes(x = group_enr_dis, y = group_missing_count_upper, color = group_missing_perc_upper)) +
+   geom_point(
+      aes(text = sprintf(paste("District Name: %s<br>Total Number of", group_in, "Students Enrolled: %s<br>Number of", group_in, "Students Missing From Gifted Education: %s<br>Percent of", group_in, "Students Missing From Gifted Education: %s"), LEA_NAME, group_enr_dis, group_missing_count_upper, group_missing_perc_upper))
+  ) +
+   geom_abline(intercept = 0, slope = state_slope, linetype = "dashed", size = .5) +
+   scale_color_viridis(option = "D", direction = -1) +
+   labs(
+    title = paste(group_in, "Student Enrollment vs.", group_in, "Students Missing from Gifted Education in", state_in),
+    y = paste("Number of", group_in, "Students Missing from Gifted Education"),
+    x = paste("Number of ", group_in, " Students Enrolled in the District"),
+    color = paste("Percent of", group_in, "Students Missing from Gifted Education")
+  ) +
+   theme_bw()
+  
+# Return the plot with a ggplotly wrapper
+  return(ggplotly(plot, tooltip = "text"))
+   
+}
+```
+
+Now let's test this function
+
+```{r}
+# Test the district plotting function
+plot_district_missingness(district_missing_df, "Asian", "CA")
+```
+
+
+The next funciton we'll write will plot missingness on an individual district level. Another possibility would be to show just one LEA AREA and plot the different racial groups to compare and contrast. 
+
+```{r}
+#Write a function to plot missingess with a district
+
+within_district_missingness_comp <- function(df, state_in, district_name) {
+# Filter the data frame based on the desired group and state
+  df <- df %>%
+           filter(LEA_STATE == state_in) %>%
+           filter(LEA_NAME == district_name)
+  
+# Plot the data using ggplot
+  plot <- ggplot(df, aes(x = group_enr_dis, y = group_missing_count_upper)) +
+   geom_point(
+      aes(color = group, text = sprintf(paste("District Name: %s<br>Group Name: %s<br>Number of Students Enrolled: %s<br>Number of Students Missing From Gifted Education: %s"), LEA_NAME, group, group_enr_dis, group_missing_count_upper)),
+      size = 2
+  ) +
+   labs(
+    title = paste("Student Enrollment vs. Students Missing from Gifted Education\nin", district_name),
+    y = paste("Number of Students Missing from Gifted Education"),
+    x = paste("Number of Students Enrolled in the District")
+  ) +
+   theme_bw() +
+   theme(legend.title = element_blank())
+  
+# Return the plot with a ggplotly wrapper
+  return(ggplotly(plot, tooltip = "text"))
+   
+}
+```
+
+This function takes in a state and a district name and returns a simialr scatterplot.
+
+```{r}
+within_district_missingness_comp(district_missing_df, "MD", "Montgomery County Public Schools")
+```
+
+# County Plotting Functions
+
+This first function takes in a data frame, a demographic group, and a state then returns a scatterplot. 
+
+```{r}
+#Write a function to plot missingness on a district level
+
+plot_county_missingness <- function(df, group_in, state_in) {
+# Filter the data frame based on the desired group and state
+  df <- df %>%
+           filter(group == group_in) %>%
+           filter(LEA_STATE == state_in)
+# Find the slope for the plots in each state
+  state_slope <- df[[1,15]]
+  
+# Plot the data using ggplot
+  plot <- ggplot(df, aes(x = group_enr_ct, y = group_missing_count_upper, color = group_missing_perc_upper)) +
+   geom_point(
+      aes(text = sprintf(paste("District Name: %s<br>Total Number of", group_in, "Students Enrolled: %s<br>Number of", group_in, "Students Missing From Gifted Education: %s<br>Percent of", group_in, "Students Missing From Gifted Education: %s"), NMCNTY, group_enr_ct, group_missing_count_upper, group_missing_perc_upper))
+  ) +
+   geom_abline(intercept = 0, slope = state_slope, linetype = "dashed", size = .5) +
+   scale_color_viridis(option = "D", direction = -1) +
+   labs(
+    title = paste(group_in, "Student Enrollment vs.", group_in, "Students Missing from Gifted Education in", state_in),
+    y = paste("Number of", group_in, "Students Missing from Gifted Education"),
+    x = paste("Number of ", group_in, " Students Enrolled in the District"),
+    color = paste("Percent of", group_in, "Students Missing from Gifted Education")
+  ) +
+   theme_bw()
+  
+# Return the plot with a ggplotly wrapper
+  return(ggplotly(plot, tooltip = "text"))
+   
+}
+```
+
+Now let's test this function
+
+```{r}
+# Test the district plotting function
+plot_county_missingness(county_missing_df, "White", "MD")
+```
+
+The next funciton we'll write will plot missingness on an individual county level. Another possibility would be to show multiple different counties (up to 5) and racial groups within those counties to compare and contrast. 
+
+```{r}
+#Write a function to plot missingess within a county
+
+within_county_missingness_comp <- function(df, state_in, county_name) {
+# Filter the data frame based on the desired group and state
+  df <- df %>%
+           filter(LEA_STATE == state_in) %>%
+           filter(NMCNTY == county_name)
+  
+# Plot the data using ggplot
+  plot <- ggplot(df, aes(x = group_enr_ct, y = group_missing_count_upper)) +
+   geom_point(
+      aes(color = group, text = sprintf(paste("District Name: %s<br>Group Name: %s<br>Number of Students Enrolled: %s<br>Number of Students Missing From Gifted Education: %s"), NMCNTY, group, group_enr_ct, group_missing_count_upper)),
+      size = 2
+  ) +
+   labs(
+    title = paste("Student Enrollment vs. Students Missing from Gifted Education\nin", county_name),
+    y = paste("Number of Students Missing from Gifted Education"),
+    x = paste("Number of Students Enrolled in the District")
+  ) +
+   theme_bw() +
+   theme(legend.title = element_blank())
+  
+# Return the plot with a ggplotly wrapper
+  return(ggplotly(plot, tooltip = "text"))
+   
+}
+```
+
+This function takes in a state and a county name and returns a similar scatterplot.
+
+```{r}
+within_county_missingness_comp(county_missing_df, "TN", "Davidson County")
+```

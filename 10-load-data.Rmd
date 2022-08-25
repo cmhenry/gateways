@@ -1,0 +1,368 @@
+---
+title: "10-load-data"
+output: html_notebook
+---
+
+The purpose of this notebook is to load and clean the data.  It should also test the data (e.g., by assertr) to ensure that assumptions about the data are met, and store the cleaned and tested data.
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr,arrow,testit)
+source(knitr::purl("12-subpopulation_function.Rmd", output = tempfile()))
+source(knitr::purl("13-enrollment-fixing-functions-for-long-data.Rmd", output = tempfile()))
+source(knitr::purl("14-enrollment-fixing-functions-for-wide-data.Rmd", output = tempfile()))
+```
+
+
+# Add LOCALE data from CCD
+## Define function
+```{r}
+add_locale_cnty_title <- function(ocr_df, ccd_locale, ccd_title, ocr_ccd_crosswalk, begin_year = '2015'){
+  
+  # Remove COMBOKEY without match from crosswalk df
+  no_match_ii = which(ocr_ccd_crosswalk$Match ==FALSE & ocr_ccd_crosswalk$`Additional Match` == FALSE)
+  ocr_ccd_crosswalk = ocr_ccd_crosswalk[-no_match_ii,]
+  
+  # Select only relevant columns from CCD dfs
+  if(begin_year == '2015'){
+    
+    ccd_locale = ccd_locale %>% 
+      select(NCESSCH, LOCALE15, CNTY15, NMCNTY15)
+    ccd_title = ccd_title %>% 
+      select(NCESSCH, TITLEI)
+    
+  }else if(begin_year == '2017'){
+    
+    ccd_locale = ccd_locale %>% 
+      select(NCESSCH, LOCALE, CNTY, NMCNTY)
+    ccd_title = ccd_title %>% 
+      select(NCESSCH, TITLEI_STATUS_TEXT)
+    
+  }
+  
+  # Select only relevant columns from crosswalk df (year of interest)
+  ocr_ccd_crosswalk = ocr_ccd_crosswalk[,c(1,grep(begin_year, colnames(ocr_ccd_crosswalk)))] %>%
+    tidyr::drop_na()
+  
+  # Inner join to merge CCD and Crosswalk dfs
+  ccd_locale_crosswalk = inner_join(ccd_locale, ocr_ccd_crosswalk, by = c("NCESSCH" = colnames(ocr_ccd_crosswalk)[2]))
+  ccd_locale_crosswalk['NCESSCH'] = NULL
+  ccd_title_crosswalk = inner_join(ccd_title, ocr_ccd_crosswalk, by = c("NCESSCH" = colnames(ocr_ccd_crosswalk)[2]))
+  ccd_title_crosswalk['NCESSCH'] = NULL
+  
+  # Left join to add LOCALE and TITLE to OCR data
+  ocr_locale_title = left_join(ocr_df, ccd_locale_crosswalk, by = "COMBOKEY")
+  ocr_locale_title = left_join(ocr_locale_title, ccd_title_crosswalk, by = "COMBOKEY")
+  
+  ocr_locale_title
+}
+```
+
+# Load data & select columns of interest
+
+```{r}
+setClass(Class = "OCR",
+         representation(
+             year = "numeric",
+             key = "data.frame",
+             wide = "data.frame",
+             long = "data.frame"             
+         ))
+
+```
+
+```{r}
+
+transOCR2017 <- function(){
+    #"FUNCTION DESCRIPTION HERE"
+
+    ## Open record layout documents and select variable names for identifying schools,
+    ## enrollment, and gifted & talented students.
+    ocr_key1 <- readxl::read_xlsx("data/OCR/2017-18-crdc-data/2017-18-crdc-data-corrected-publication 2/2017-18 Public-Use Files/Documentation/2017-18 CRDC File Structure.xlsx",
+                                 sheet = "Gifted and Talented")
+
+    ocr_key2 <- readxl::read_xlsx("data/OCR/2017-18-crdc-data/2017-18-crdc-data-corrected-publication 2/2017-18 Public-Use Files/Documentation/2017-18 CRDC File Structure.xlsx",
+                                  sheet = "Enrollment") %>%
+        filter(grepl("SCH_ENR|TOT_ENR",`Field Name` ))
+
+    ocr_key <- rbind(ocr_key1, ocr_key2)
+
+    ## Open full school-level data files, import only variables of interest, convert large numeric vars to chars, merge
+    df_ocr_ENR_wide <- vroom("data/OCR/2017-18-crdc-data/2017-18-crdc-data-corrected-publication 2/2017-18 Public-Use Files/Data/SCH/CRDC/CSV/Enrollment.csv",
+                         col_select = c(ocr_key2$`Field Name`, 'COMBOKEY'),
+                         col_types = c(COMBOKEY = "c"))
+    df_ocr_GATE_wide <- vroom("data/OCR/2017-18-crdc-data/2017-18-crdc-data-corrected-publication 2/2017-18 Public-Use Files/Data/SCH/CRDC/CSV/Gifted and Talented.csv",
+                         col_select = c(ocr_key1$`Field Name`, 'COMBOKEY', 'LEAID', 'SCHID'),
+                         col_types = c(COMBOKEY = "c",
+                                       LEAID = "c",
+                                       SCHID = "c"))
+    df_ocr_wide <- merge(df_ocr_GATE_wide, df_ocr_ENR_wide, by = 'COMBOKEY')
+    
+    ## Build lookup table
+    ocr_lookup <- unique(df_ocr_wide[,c("LEA_STATE","LEAID","LEA_NAME","SCHID","SCH_NAME","COMBOKEY")])
+    df_ocr_wide <- df_ocr_wide %>% select(-c(LEA_NAME,
+                                             #LEAID,
+                                             #LEA_STATE,
+                                             #SCH_GT_IND,
+                                             LEA_STATE_NAME,
+                                             #SCHID,
+                                             SCH_NAME,
+                                             JJ))
+    
+    # Load CCD data & crosswalk file
+    ## WARNING: CCD Title I data for 2017-2018 is a version behind the 2015-2016 data & does not contain the same
+    ## variable names or data
+    ccd_locale <- readxl::read_xlsx('data/CCD/2017-2018/EDGE_GEOCODE_PUBLICSCH_1718/EDGE_GEOCODE_PUBLICSCH_1718.xlsx',
+                                    col_types = c(NCESSCH = 'text'))
+    ccd_title <- vroom("data/CCD/2017-2018/ccd_sch_129_1718_w_1a_083118.csv",
+                          col_types = c(NCESSCH = 'c'))
+    ocr_ccd_crosswalk <- readxl::read_xlsx("data/2017-18-CRDC-EDFacts-Crosswalk-rev.xlsx",
+                                           sheet = "2017-18 Crosswalk",
+                                           col_types = c(COMBOKEY = 'text'))
+    
+    ## Add locale data
+    
+    df_ocr_wide <- add_locale_cnty_title(ocr_df = df_ocr_wide, 
+                                ccd_locale = ccd_locale, 
+                                ccd_title = ccd_title, 
+                                ocr_ccd_crosswalk = ocr_ccd_crosswalk, 
+                                begin_year = '2017')
+    
+    #TITLEI
+    df_ocr_wide['TITLEI_original'] <- df_ocr_wide$TITLEI_STATUS_TEXT
+    ii <- which(df_ocr_wide$TITLEI_STATUS_TEXT %in% c("Missing", "Not reported"))
+    df_ocr_wide$TITLEI_STATUS_TEXT[ii] <- "Unknown"
+    ii <- which(df_ocr_wide$TITLEI_STATUS_TEXT %in% c("Not a Title I school"))
+    df_ocr_wide$TITLEI_STATUS_TEXT[ii] <- "No"
+    df_ocr_wide$TITLEI_STATUS_TEXT[-ii] <- "Yes"
+    
+    # Gifted ID column
+    ii <- which(df_ocr_wide$SCH_GT_IND %in% c("Yes", "No"))
+    df_ocr_wide$SCH_GT_IND[-ii] <- "No" # to match Anne's numbers
+    
+    # LOCALE column
+    df_ocr_wide['LOCALE_original'] <- df_ocr_wide$LOCALE
+    city_ii <- which(df_ocr_wide$LOCALE %in% c('11', '12', '13'))
+    suburb_ii <- which(df_ocr_wide$LOCALE %in% c('21', '22', '23'))
+    town_ii <- which(df_ocr_wide$LOCALE %in% c('31', '32', '33'))
+    rural_ii <- which(df_ocr_wide$LOCALE %in% c('41', '42', '43'))
+    df_ocr_wide$LOCALE[-c(city_ii, suburb_ii, town_ii, rural_ii)] <- "Unknown"
+    df_ocr_wide$LOCALE[city_ii] <- "City"
+    df_ocr_wide$LOCALE[suburb_ii] <- "Suburb"
+    df_ocr_wide$LOCALE[town_ii] <- "Town"
+    df_ocr_wide$LOCALE[rural_ii] <- "Rural"
+    
+    # Standardize new column names
+    colnames(df_ocr_wide)[grep('^TITLEI_STATUS_TEXT$', colnames(df_ocr_wide))] <- 'TITLEI'
+    
+    ## Transform wide dataset to long
+    df_ocr_long <- df_ocr_wide %>% 
+        gather(module, enrollment, SCH_GTENR_HI_M:SCH_ENR_IDEA_F, factor_key = T)
+
+    df_ocr_long <- df_ocr_long %>% mutate(gender = str_extract(module, "[FM]$"),
+                                          race = str_extract(module, "(HI)|(MHI)|(AS)|(AM)|(WH)|(BL)|(TR)|(HP)"),
+                                          other = str_extract(module, "(IDEA)(?=_)|(LEP)(?=_)|(504)(?=_)"),
+                                          module = str_extract(module, "SCH_([A-Z]+|[0-9])+|TOT_([A-Z]+|[0-9])+"))
+    
+    ## Apply enrollment fixes for wide data
+    df_ocr_wide <- enrollment_fix_wide(df_ocr_wide)
+    ## Apply enrollment fixes for long data
+    df_ocr_long <- enrollment_fix_long(df_ocr_long)
+    
+    ## Return OCR object
+    return(new("OCR",
+               year = 2017,
+               key = ocr_key,
+               wide = df_ocr_wide,
+               long = df_ocr_long))
+    
+}
+
+transOCR2015 <- function(){
+    #"FUNCTION DESCRIPTION HERE"
+
+    ## Open record layout document and select variable names for identifying schools,
+    ## enrollment, and gifted & talented students.
+    ocr_key <- vroom("data/OCR/2015-16-crdc-data/Data Files and Layouts/CRDC 2015-16 School Data Record Layout.csv")
+    columns <- ocr_key$Field_Name[ocr_key$Module == "Identification" | 
+                                  ocr_key$Module == "Enrollment" |
+                                  ocr_key$Module == "Gifted and Talented"]
+
+    ## Open full school-level data file, import only variables of interst, convert large numeric vars to char
+    df_ocr_wide <- vroom("data/OCR/2015-16-crdc-data/Data Files and Layouts/CRDC 2015-16 School Data.csv", 
+                         col_select = columns,
+                         col_types = c(COMBOKEY = "c",
+                                       LEAID = "c",
+                                       SCHID = "c"))
+
+    ## Build lookup table
+    ocr_lookup <- unique(df_ocr_wide[,c("LEA_STATE","LEAID","LEA_NAME","SCHID","SCH_NAME","COMBOKEY")])
+    df_ocr_wide <- df_ocr_wide %>% select(-c(LEA_NAME,
+                                             #LEAID,
+                                             #LEA_STATE,
+                                             #SCH_GT_IND,
+                                             LEA_STATE_NAME,
+                                             #SCHID,
+                                             SCH_NAME,
+                                             JJ) & 
+                                            !(contains("PSENR")))
+    
+    ### Helpful functions to pad SCHID and combine with LEAID to create new unique COMBOKEY
+    df_ocr_wide <- df_ocr_wide %>%
+      mutate(SCHID = str_pad(SCHID, 5, side='left', pad='0')) %>%
+      mutate(LEAID = str_pad(LEAID, 7, side='left', pad='0')) 
+    df_ocr_wide <- df_ocr_wide %>%
+      mutate(COMBOKEY = str_c(LEAID, SCHID)) %>%
+      select(COMBOKEY, everything())
+    ### Assert to verify the functionality of the necessary recoding
+    assert_12_characters <- function(x) nchar(x)==12
+    assert(assert_12_characters(df_ocr_wide$COMBOKEY))
+
+    ## Load CCD data & crosswalk file
+    ccd_locale <- readxl::read_xlsx('data/CCD/2015-2016/EDGE_GEOCODE_PUBLICSCH_1516/EDGE_GEOCODE_PUBLICSCH_1516.xlsx', 
+                                    col_types = c(NCESSCH = 'text'))
+    ccd_title <- vroom("data/CCD/2015-2016/ccd_sch_129_1516_w_2a_011717.csv", 
+                          col_types = c(NCESSCH = 'c'))
+    ocr_ccd_crosswalk <- readxl::read_xlsx("data/2017-18-CRDC-EDFacts-Crosswalk-rev.xlsx", 
+                                           sheet = "2017-18 Crosswalk", 
+                                           col_types = c(COMBOKEY = 'text'))
+
+    ## Add locale data
+    
+    df_ocr_wide <- add_locale_cnty_title(ocr_df = df_ocr_wide, 
+                                ccd_locale = ccd_locale, 
+                                ccd_title = ccd_title, 
+                                ocr_ccd_crosswalk = ocr_ccd_crosswalk, 
+                                begin_year = '2015')
+    
+    #TITLEI
+    df_ocr_wide['TITLEI_original'] <- df_ocr_wide$TITLEI
+    ii <- which(df_ocr_wide$TITLEI %in% c("Yes", "No"))
+    df_ocr_wide$TITLEI[-ii] <- "Unknown"
+    # Gifted ID column
+    ii <- which(df_ocr_wide$SCH_GT_IND %in% c("Yes", "No"))
+    df_ocr_wide$SCH_GT_IND[-ii] <- "No" # to match Anne's numbers
+    # LOCALE15 column
+    df_ocr_wide['LOCALE15_original'] <- df_ocr_wide$LOCALE15
+    city_ii <- which(df_ocr_wide$LOCALE15 %in% c('11', '12', '13'))
+    suburb_ii <- which(df_ocr_wide$LOCALE15 %in% c('21', '22', '23'))
+    town_ii <- which(df_ocr_wide$LOCALE15 %in% c('31', '32', '33'))
+    rural_ii <- which(df_ocr_wide$LOCALE15 %in% c('41', '42', '43'))
+    df_ocr_wide$LOCALE15[-c(city_ii, suburb_ii, town_ii, rural_ii)] <- "Unknown"
+    df_ocr_wide$LOCALE15[city_ii] <- "City"
+    df_ocr_wide$LOCALE15[suburb_ii] <- "Suburb"
+    df_ocr_wide$LOCALE15[town_ii] <- "Town"
+    df_ocr_wide$LOCALE15[rural_ii] <- "Rural"
+    
+    # Standardize new column names
+    colnames(df_ocr_wide)[grep('^LOCALE15$', colnames(df_ocr_wide))] <- 'LOCALE'
+    colnames(df_ocr_wide)[grep('^CNTY15$', colnames(df_ocr_wide))] <- 'CNTY'
+    colnames(df_ocr_wide)[grep('^NMCNTY15$', colnames(df_ocr_wide))] <- 'NMCNTY'
+    colnames(df_ocr_wide)[grep('^LOCALE15_original$', colnames(df_ocr_wide))] <- 'LOCALE_original'
+
+    ## Transform wide dataset to long
+    df_ocr_long <- df_ocr_wide %>% 
+        gather(module, enrollment, SCH_ENR_HI_M:SCH_GTENR_IDEA_F, factor_key = T)
+
+    df_ocr_long <- df_ocr_long %>% mutate(gender = str_extract(module, "[FM]$"),
+                                          race = str_extract(module, "(HI)|(MHI)|(AS)|(AM)|(WH)|(BL)|(TR)|(HP)"),
+                                          other = str_extract(module, "(IDEA)(?=_)|(LEP)(?=_)|(504)(?=_)"),
+                                          module = str_extract(module, "SCH_([A-Z]+|[0-9])+|TOT_([A-Z]+|[0-9])+"))
+    ## Apply enrollment fixes for wide data
+    df_ocr_wide <- enrollment_fix_wide(df_ocr_wide)
+    ## Apply enrollment fixes for long data
+    df_ocr_long <- enrollment_fix_long(df_ocr_long)
+
+    ## Return OCR object
+    return(new("OCR",
+               year = 2015,
+               key = ocr_key,
+               wide = df_ocr_wide,
+               long = df_ocr_long))
+
+}
+
+
+``` 
+
+```{r}
+
+writeOCR <- function(ocr){
+
+    data_path <- str_c("data/OCR-transformed/",ocr@year,"/ocr_",ocr@year)
+    
+    if (file.exists(paste0("data/OCR-transformed/", ocr@year))){
+
+        write_feather(ocr@key, paste0(data_path,"_lookup.feather"))
+        write_feather(ocr@wide, paste0(data_path,"_wide.feather"))
+        write_feather(ocr@long, paste0(data_path,"_long.feather"))
+        
+    } else {
+        dir.create(paste0("data/OCR-transformed/", ocr@year))
+
+        write_feather(ocr@key, paste0(data_path,"_lookup.feather"))
+        write_feather(ocr@wide, paste0(data_path,"_wide.feather"))
+        write_feather(ocr@long, paste0(data_path,"_long.feather"))
+    }
+}
+
+```
+
+## Write data to feather
+
+```{r}
+## Load and transform 2017-2018 OCR data
+ocr_2017 <- transOCR2017()
+writeOCR(ocr_2017)
+
+## Load and transform 2015-2016 OCR data
+ocr_2015 <- transOCR2015()
+writeOCR(ocr_2015)
+
+```
+
+# Helper functions
+```{r}
+# Read in data
+ocr_wide_2015 = read_feather(file='data/OCR-transformed/2015/ocr_2015_wide.feather')
+ocr_wide_2017 = read_feather(file='data/OCR-transformed/2017/ocr_2017_wide.feather')
+```
+
+## 2015
+### Without LOCALE
+```{r}
+# Nationwide
+df_nation_nolocale_2015 <- subpopulation_gentable(ocr_wide_2015, groupby_colnames = c('TITLEI', 'SCH_GT_IND'))
+# By state
+df_states_nolocale_2015 <- subpopulation_gentable(ocr_wide_2015, groupby_colnames = c('LEA_STATE','TITLEI', 'SCH_GT_IND'))
+```
+
+### With LOCALE
+```{r}
+# Nationwide
+df_nation_locale_2015 <- subpopulation_gentable(ocr_wide_2015, groupby_colnames = c('TITLEI', 'SCH_GT_IND', 'LOCALE'))
+# By state
+df_states_locale_2015 <- subpopulation_gentable(ocr_wide_2015, groupby_colnames = c('LEA_STATE','TITLEI', 'SCH_GT_IND', 'LOCALE'))
+```
+
+## 2017
+### Without LOCALE
+```{r}
+# Nationwide
+df_nation_nolocale_2017 <- subpopulation_gentable(ocr_wide_2017, groupby_colnames = c('TITLEI', 'SCH_GT_IND'))
+# By state
+df_states_nolocale_2017 <- subpopulation_gentable(ocr_wide_2017, groupby_colnames = c('LEA_STATE','TITLEI', 'SCH_GT_IND'))
+```
+
+### With LOCALE
+```{r}
+# Nationwide
+df_nation_locale_2017 <- subpopulation_gentable(ocr_wide_2017, groupby_colnames = c('TITLEI', 'SCH_GT_IND', 'LOCALE'))
+# By state
+df_states_locale_2017 <- subpopulation_gentable(ocr_wide_2017, groupby_colnames = c('LEA_STATE','TITLEI', 'SCH_GT_IND', 'LOCALE'))
+```
+
+
+

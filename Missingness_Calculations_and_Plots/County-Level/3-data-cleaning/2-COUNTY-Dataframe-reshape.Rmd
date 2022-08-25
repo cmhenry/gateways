@@ -1,0 +1,182 @@
+---
+title: "27-COUNTY-Dataframe-reshape"
+output: html_notebook
+---
+
+The purpose of this notebook is to reshape the missingness at the county level so that we have a data frame we can easily join with the other state level data in the shiny app. 
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2, plotly, viridis)
+```
+
+# Load Data
+
+We have used these other markdown files to create two mega tables for the shiny app to reference when it plots the missingness data. One megatable for state data and one megatable for district data. We will load that megatable in from Box now. 
+
+```{r}
+#Load missingness megatable from the box
+state_level_missing_plots_df <- read_csv("data/missingness_data/state_level_missing_barplots_df.csv")
+county_missing_df <- read_csv("data/missingness_data/county_missing_df.csv")
+```
+# BUild data frame 
+
+```{r}
+# Start with the counties overall df from RMD 1 in the calculations folder
+builder_df <- OV_ct_df
+```
+
+# AIAN
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+AIAN_ct_df <- county_missing_df %>%
+  filter(group == "AIAN") %>%
+  select(group_missing_count_lower, group_missing_count_upper, group_missing_perc_lower, group_missing_perc_upper)
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, AIAN_ct_df)
+```
+
+# Asian
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+AS_ct_df <- county_missing_df %>%
+  filter(group == "Asian") %>%
+  select(group_missing_count_lower, group_missing_count_upper, group_missing_perc_lower, group_missing_perc_upper)
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, AS_ct_df)
+```
+
+# Black
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+BL_ct_df <- county_missing_df %>%
+  filter(group == "Black") %>%
+  select(group_missing_count_lower, group_missing_count_upper, group_missing_perc_lower, group_missing_perc_upper)
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, BL_ct_df)
+```
+
+# Latinx
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+HI_ct_df <- county_missing_df %>%
+  filter(group == "Latinx") %>%
+  select(group_missing_count_lower, group_missing_count_upper, group_missing_perc_lower, group_missing_perc_upper)
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, HI_ct_df)
+```
+
+# NHPI
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+HP_ct_df <- county_missing_df %>%
+  filter(group == "NHPI") %>%
+  select(group_missing_count_lower, group_missing_count_upper, group_missing_perc_lower, group_missing_perc_upper)
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, HP_ct_df)
+```
+
+# TMR
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+TR_ct_df <- county_missing_df %>%
+  filter(group == "TMR") %>%
+  select(group_missing_count_lower, group_missing_count_upper, group_missing_perc_lower, group_missing_perc_upper)
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, TR_ct_df)
+```
+
+# White
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+WH_ct_df <- county_missing_df %>%
+  filter(group == "White") %>%
+  select(group_missing_count_lower, group_missing_count_upper, group_missing_perc_lower, group_missing_perc_upper)
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, WH_ct_df)
+```
+
+# Change the column names
+
+Our data frame is full with all the county level missingness data we need. Now we just need to change the names to make it work with the shinyAPP. 
+
+```{r}
+# Create a vector of column names
+county_col_names <- c(
+  "LEA_STATE",
+  "NMCNTY",
+  "Count Missing Lower Bound Overall",
+  "Count Missing Upper Bound Overall",
+  "Percent Missing Lower Bound Overall",
+  "Percent Missing Upper Bound Overall",
+  "Count Missing Lower Bound AIAN",
+  "Count Missing Upper Bound AIAN",
+  "Percent Missing Lower Bound AIAN",
+  "Percent Missing Upper Bound AIAN",
+  "Count Missing Lower Bound Asian",
+  "Count Missing Upper Bound Asian",
+  "Percent Missing Lower Bound Asian",
+  "Percent Missing Upper Bound Asian",
+  "Count Missing Lower Bound Black",
+  "Count Missing Upper Bound Black",
+  "Percent Missing Lower Bound Black",
+  "Percent Missing Upper Bound Black",
+  "Count Missing Lower Bound Latinx",
+  "Count Missing Upper Bound Latinx",
+  "Percent Missing Lower Bound Latinx",
+  "Percent Missing Upper Bound Latinx",
+  "Count Missing Lower Bound NHPI",
+  "Count Missing Upper Bound NHPI",
+  "Percent Missing Lower Bound NHPI",
+  "Percent Missing Upper Bound NHPI",
+  "Count Missing Lower Bound TMR",
+  "Count Missing Upper Bound TMR",
+  "Percent Missing Lower Bound TMR",
+  "Percent Missing Upper Bound TMR",
+  "Count Missing Lower Bound White",
+  "Count Missing Upper Bound White",
+  "Percent Missing Lower Bound White",
+  "Percent Missing Upper Bound White"
+)
+```
+
+
+```{r}
+# Rename the data frame
+colnames(builder_df) <- county_col_names
+```
+
+# save builder df to box
+
+
+

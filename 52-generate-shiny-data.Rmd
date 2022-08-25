@@ -1,0 +1,99 @@
+---
+title: "52-generate-shiny-data"
+output: html_document
+runtime: shiny
+---
+This notebook generates map data for 2016-2017 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,arrow,leaflet,maps,ggplot2,ggrepel,usmap,usdata,
+               feather,tigris,sf,plotly,shiny,shinyWidgets,readxl,
+               maptools,sp,rgeos,shinydashboard,vroom, stringr)
+```
+
+## Access, Equity and Missingness data
+```{r}
+# Load data
+load("data/access_equity_data/access_equity_2017.RData")
+acc_eq_codebook <- readxl::read_xlsx("data/access_equity_data/codebook_mapsapp.xlsx")
+states_missingness <- read_csv("data/missingness_data/national_missing_df.csv")
+county_missingness <- read_csv("data/missingness_data/county_missing_df_wide.csv")
+
+# Rename access and equity columns for state and county
+colnames(state_access_equity_2017)[-1] <- acc_eq_codebook$varname[-1]
+colnames(county_access_equity_2017)[-1][-1] <- acc_eq_codebook$varname[-1]
+
+# Join missingness and access/equity data for states
+state_acc_eq_mis_2017 <- state_access_equity_2017 %>%
+  left_join(states_missingness, by = c("STATE" = "LEA_STATE"))
+
+# Join missingness and access/equity data for counties
+fix_countydt <- function(county_df, county_colname, state_colname){
+  county_df[county_df == "NA"] <- NA
+  county_df <- county_df[-which(is.na(county_df[,county_colname])),] # remove missing values
+  county_df[county_colname] <- lapply(county_df[county_colname], stringr::str_squish) # remove extra spaces
+  county_df$STATE_COUNTY <- paste0(county_df[[state_colname]], '_', county_df[[county_colname]])
+  return(county_df)
+}
+county_access_equity_2017 <- fix_countydt(county_access_equity_2017, 'COUNTY', 'STATE')
+county_missingness <- fix_countydt(county_missingness, 'NMCNTY', 'LEA_STATE')
+county_acc_eq_mis_2017 <- county_access_equity_2017 %>%
+  left_join(county_missingness, by = c("STATE_COUNTY" = "STATE_COUNTY"))
+
+## Generate states & county polygons
+states <- states(cb = F)
+counties <- counties(cb = F)
+
+## Merge state TIGER & data
+states_coef <- inner_join(x = states, y = state_acc_eq_mis_2017, by = c("STUSPS" = "STATE"))
+
+## Merge counties TIGER & data
+states_look <- as.data.frame(states) %>%
+  select(c("STATEFP","STUSPS")) %>% 
+  unique()
+counties <- left_join(counties, states_look, by = 'STATEFP')
+counties$NAMELSAD <- lapply(counties$NAMELSAD, stringr::str_squish) # remove extra spaces
+counties$STATE_COUNTY <- paste0(counties$STUSPS, '_', counties$NAMELSAD)
+counties_coef <- inner_join(counties, county_acc_eq_mis_2017, by = 'STATE_COUNTY')
+
+## Merge regions data
+regions <- vroom("data/regions.csv")
+states_coef <- merge(x = states_coef, y = regions, by.x = "STUSPS", by.y = "LEA_STATE")
+counties_coef <- merge(x = counties_coef, y = regions, by.x = "STUSPS", by.y = "LEA_STATE")
+
+```
+
+## Legal mandates data
+```{r}
+#Load NAGC data
+NAGC_ploting_df <- read_csv("data/state_legal_mandates_data/NAGC_ploting_df.csv")
+NAGC_states <- read_csv("data/state_legal_mandates_data/NAGC_data_by_state.csv") 
+```
+
+## Extra missing data
+```{r}
+#Load data
+state_barplots_df <- read_csv("data/missingness_data/state_level_missing_barplots_df.csv")
+county_missing_df <- read_csv("data/missingness_data/county_missing_df.csv") 
+```
+
+## Save all
+```{r}
+# Save data
+if(!dir.exists('data/dashboard_data')){
+  dir.create('data/dashboard_data')
+}
+save(states_coef, 
+     counties_coef, 
+     NAGC_ploting_df, 
+     NAGC_states,
+     state_barplots_df,
+     county_missing_df,
+     file = 'data/dashboard_data/dbdata_2017.RData')
+```
+
+

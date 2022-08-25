@@ -1,0 +1,139 @@
+---
+title: "27-COUNTY-NHPI-youth-missing-graphics-calculations"
+output: html_notebook
+---
+
+The purpose of this notebook is to create a data frame that we can use to plot the NHPI youth missing graphic from Figures 16-22 on Pages 115-118 of the Access Denied Report. We will call the final data frame "HP_dis_df."
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2)
+```
+
+Now we can use the original wide data to calculate the missing percentages for different demographic groups and then tack those calculations on to the original data frame "cn_and_state_overall_df" that we created in the 27-COUNTY-youth-missing-graphics-calculations RMD file.
+
+### NHPI
+
+We will start by finding percent missingness in NHPI populations
+
+```{r}
+# Get percent of HP students in GT in each state
+HP_ct_totals_perc <- ocr_17_wide %>%
+  group_by(LEA_STATE, NMCNTY) %>%
+  summarise(ct_tot_HP_enr = (sum(SCH_ENR_HP_M,na.rm = TRUE) + sum(SCH_ENR_HP_F,na.rm = TRUE)), ct_tot_HP_gt_enr = (sum(SCH_GTENR_HP_M,na.rm = TRUE) + sum(SCH_GTENR_HP_F,na.rm = TRUE)), ct_HP_perc_gt = (sum(SCH_GTENR_HP_M,na.rm = TRUE) + sum(SCH_GTENR_HP_F,na.rm = TRUE))/(sum(SCH_ENR_HP_M,na.rm = TRUE) + sum(SCH_ENR_HP_F,na.rm = TRUE))) %>%
+  ungroup()
+```
+
+```{r}
+# Add percent of HI students in each state to main DF
+HP_ct_missing_df <- cn_and_state_overall_df %>%
+  left_join(HP_ct_totals_perc, by = c("LEA_STATE" = "LEA_STATE", "NMCNTY" = "NMCNTY"))
+```
+
+Now we need to break down to populations by students who are in schools that offer GT programs and schools that do not offer GT programs
+
+```{r}
+# Find the total number of students in schools that do not offer GT services
+ct_HP_enrollment_no_gt_df <- ocr_17_wide %>%
+  filter(SCH_GT_IND == "No") %>%
+  group_by(LEA_STATE, NMCNTY) %>%
+  summarise(ct_tot_HP_enr_no_gt = (sum(SCH_ENR_HP_M,na.rm = TRUE) + sum(SCH_ENR_HP_F,na.rm = TRUE))) %>%
+  ungroup()
+  
+```
+
+```{r}
+# Find the total number of students in schools that offer GT services
+ct_HP_enrollment_w_gt_df <- ocr_17_wide %>%
+  filter(SCH_GT_IND == "Yes") %>%
+  group_by(LEA_STATE, NMCNTY) %>%
+  summarise(ct_tot_HP_enr_w_gt = sum(SCH_ENR_HP_M,na.rm = TRUE) + sum(SCH_ENR_HP_F,na.rm = TRUE)) %>%
+  ungroup()
+```
+
+```{r}
+# Add number of students from schools with different service types to full DF
+HP_ct_missing_df <- HP_ct_missing_df %>%
+  left_join(ct_HP_enrollment_no_gt_df, by = c("LEA_STATE" = "LEA_STATE", "NMCNTY" = "NMCNTY")) %>%
+  left_join(ct_HP_enrollment_w_gt_df, by = c("LEA_STATE" = "LEA_STATE", "NMCNTY" = "NMCNTY"))
+
+```
+
+# Clean NAs out of columns
+
+```{r}
+# Clean NAs from the columns for gt and non gt student enrollment
+HP_ct_missing_df[,15:16][is.na(HP_ct_missing_df[,15:16])] <- 0
+```
+
+# Calculate Missingness
+Now our data frame has all the columns we need to calculate the number of missing AM students from gt programs.
+
+```{r}
+# Calculate missingness counts
+HP_ct_missing_df <- HP_ct_missing_df %>%
+    mutate(
+          HP_no_gt_missing_ct_lower = case_when(is.na(ct_HP_perc_gt) == TRUE ~ NA_real_,
+                                             state_perc_gt > 0 ~ round(state_perc_gt * ct_tot_HP_enr_no_gt), 
+                                             state_perc_gt == 0 ~ round(national_gt_avg * ct_tot_HP_enr_no_gt),
+                                             ), 
+          HP_no_gt_missing_ct_upper = case_when(ct_tot_HP_enr == 0 ~ NA_real_,
+                                             state_perc_gt > 0 ~ round(state_nonT1_perc_gt * ct_tot_HP_enr_no_gt), 
+                                             state_perc_gt == 0 ~ round(national_gt_avg_nont1 * ct_tot_HP_enr_no_gt),
+                                             ), 
+          HP_underrep_missing_ct_lower = case_when(ct_tot_HP_enr == 0 ~ NA_real_,
+                                                    ct_tot_HP_enr > 0 & ct_tot_HP_enr_w_gt == 0 ~ 0,
+                                                    ct_tot_HP_enr > 0 & ct_tot_HP_enr_w_gt > 0 ~ round((ct_tot_HP_enr_w_gt *                                                     state_perc_gt)) - ct_tot_HP_gt_enr
+                                             ),
+          HP_underrep_missing_ct_upper = case_when(ct_tot_HP_enr == 0 ~ NA_real_,
+                                                    ct_tot_HP_enr > 0 & ct_tot_HP_enr_w_gt == 0 ~ 0,
+                                                    ct_tot_HP_enr > 0 & ct_tot_HP_enr_w_gt > 0 ~ round((ct_tot_HP_enr_w_gt *                                                     state_nonT1_perc_gt)) - ct_tot_HP_gt_enr
+                                             )
+         )
+```
+
+```{r}
+#Convert negative underrep counts to 0
+HP_ct_missing_df[,19:20][(HP_ct_missing_df[,19:20]) < 0] <- 0
+```
+
+```{r}
+# Generate counts and percentages of missing students
+HP_ct_missing_df <- HP_ct_missing_df %>%
+  mutate(
+         count_HP_missing_ct_lower = HP_no_gt_missing_ct_lower + HP_underrep_missing_ct_lower,
+         count_HP_missing_ct_upper = HP_no_gt_missing_ct_upper + HP_underrep_missing_ct_upper,
+         perc_HP_missing_ct_lower = (HP_no_gt_missing_ct_lower + HP_underrep_missing_ct_lower)/(HP_no_gt_missing_ct_lower +                                               HP_underrep_missing_ct_lower + ct_tot_HP_gt_enr),
+         perc_HP_missing_ct_upper = (HP_no_gt_missing_ct_upper + HP_underrep_missing_ct_upper)/(HP_no_gt_missing_ct_upper +                                               HP_underrep_missing_ct_upper + ct_tot_HP_gt_enr)
+         )
+```
+
+Now we have all the missing percentages calculated we need to do a bit of cleaning before we can plot this data
+
+```{r}
+# Select only the columns we want to plot information from
+HP_ct_df <- HP_ct_missing_df %>%
+  select(LEA_STATE, NMCNTY, tot_ct_enr, tot_ct_gt_enr, ct_tot_HP_enr, ct_tot_HP_gt_enr, count_HP_missing_ct_lower,          count_HP_missing_ct_upper, perc_HP_missing_ct_lower, perc_HP_missing_ct_upper)
+```
+
+```{r}
+# Tack on year, group, and region columns
+
+HP_ct_df$group <- "NHPI"
+HP_ct_df$year <- 2017
+
+HP_ct_df <- HP_ct_df %>%
+  mutate(region = case_when(LEA_STATE == "CA" | LEA_STATE == "OR" | LEA_STATE == "WA" ~ "Pacific",
+                            LEA_STATE == "AK" | LEA_STATE == "HI" | LEA_STATE == "PR" ~ "Noncontiguous",
+                            LEA_STATE == "AZ" | LEA_STATE == "NM" | LEA_STATE == "TX" | LEA_STATE == "OK" ~ "Southwest",
+                            LEA_STATE == "NV" | LEA_STATE == "UT" | LEA_STATE == "CO" | LEA_STATE == "WY" |  LEA_STATE == "ID" |                              LEA_STATE == "MT" ~ "Rocky Mountains",
+                            LEA_STATE == "SD" | LEA_STATE == "ND" | LEA_STATE == "NE" | LEA_STATE == "KS" | LEA_STATE == "MN" |                               LEA_STATE == "IA" | LEA_STATE == "MO" | LEA_STATE == "WI" | LEA_STATE == "IL" | LEA_STATE == "MI" |                               LEA_STATE == "IN" | LEA_STATE == "OH" ~ "Midwest",
+                            LEA_STATE == "PA" | LEA_STATE == "NJ" | LEA_STATE == "NY" | LEA_STATE == "CT" | LEA_STATE == "RI" |                               LEA_STATE == "MA" | LEA_STATE == "VT" | LEA_STATE == "NH" | LEA_STATE == "ME" ~ "Northeast",
+                            LEA_STATE == "LA" | LEA_STATE == "AR" | LEA_STATE == "MS" | LEA_STATE == "AL" | LEA_STATE == "TN" |                               LEA_STATE == "KY" | LEA_STATE == "WV" | LEA_STATE == "DE" | LEA_STATE == "MD" | LEA_STATE == "DC" |                               LEA_STATE == "VA" | LEA_STATE == "NC" | LEA_STATE == "SC" | LEA_STATE == "GA" | LEA_STATE == "FL"                                 ~ "Southeast"))  
+```
+
+This data frame is usable for some visualizations now. I will wait to get more info from stakeholders before making visualizations.
+
+

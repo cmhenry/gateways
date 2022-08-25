@@ -1,0 +1,112 @@
+---
+title: "27-COUNTY-OVERALL-youth-missing-graphics-calculations"
+output: html_notebook
+---
+
+The purpose of this notebook is to create a data frame that we can use to plot the Overall youth missing graphic from Figures 16-22 on Pages 115-118 of the Access Denied Report.We will call the final data frame "Overall_cn_df."
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2)
+```
+
+Now we can use the original wide data to calculate the missing percentages for different demographic groups and then tack those calculations on to the original data frame "cn_and_state_overall_df" that we created in the 27-COUNTY-youth-missing-graphics-calculations RMD file.
+
+### Overall
+
+We will start by finding percent missingness in the total population
+
+
+Now we need to break down to populations by students who are in schools that offer GT programs and schools that do not offer GT programs
+
+```{r}
+# Find the total number of students in schools that do not offer GT services
+ct_enrollment_no_gt_df <- ocr_17_wide %>%
+  filter(SCH_GT_IND == "No") %>%
+  group_by(LEA_STATE, NMCNTY) %>%
+  summarise(ct_tot_enr_no_gt = (sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE))) %>%
+  ungroup()
+  
+```
+
+```{r}
+# Find the total number of students in schools that offer GT services
+ct_enrollment_w_gt_df <- ocr_17_wide %>%
+  filter(SCH_GT_IND == "Yes") %>%
+  group_by(LEA_STATE, NMCNTY) %>%
+  summarise(ct_tot_enr_w_gt = (sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE))) %>%
+  ungroup()
+```
+
+```{r}
+# Add number of students from schools with different service types to full DF
+OV_ct_missing_df <- cn_and_state_overall_df %>%
+  left_join(ct_enrollment_no_gt_df, by = c("LEA_STATE" = "LEA_STATE", "NMCNTY" = "NMCNTY")) %>%
+  left_join(ct_enrollment_w_gt_df, by = c("LEA_STATE" = "LEA_STATE", "NMCNTY" = "NMCNTY"))
+
+```
+
+# Clean NAs out of columns
+
+```{r}
+# Clean NAs from the columns for gt and non gt student enrollment
+OV_ct_missing_df[,12:13][is.na(OV_ct_missing_df[,12:13])] <- 0
+```
+
+# Calculate Missingness
+Now our data frame has all the columns we need to calculate the number of missing AM students from gt programs.
+
+```{r}
+# Calculate missingness counts
+OV_ct_missing_df <- OV_ct_missing_df %>%
+    mutate(
+          OV_no_gt_missing_ct_lower = case_when(is.na(ct_perc_gt) == TRUE ~ NA_real_,
+                                             state_perc_gt > 0 ~ round(state_perc_gt * ct_tot_enr_no_gt), 
+                                             state_perc_gt == 0 ~ round(national_gt_avg * ct_tot_enr_no_gt),
+                                             ), 
+          OV_no_gt_missing_ct_upper = case_when(tot_ct_enr == 0 ~ NA_real_,
+                                             state_perc_gt > 0 ~ round(state_nonT1_perc_gt * ct_tot_enr_no_gt), 
+                                             state_perc_gt == 0 ~ round(national_gt_avg_nont1 * ct_tot_enr_no_gt),
+                                             ), 
+          OV_underrep_missing_ct_lower = case_when(tot_ct_enr == 0 ~ NA_real_,
+                                                    tot_ct_enr > 0 & ct_tot_enr_w_gt == 0 ~ 0,
+                                                    tot_ct_enr > 0 & ct_tot_enr_w_gt > 0 ~ round((ct_tot_enr_w_gt *                                                     state_perc_gt)) - tot_ct_gt_enr
+                                             ),
+          OV_underrep_missing_ct_upper = case_when(tot_ct_enr == 0 ~ NA_real_,
+                                                    tot_ct_enr > 0 & ct_tot_enr_w_gt == 0 ~ 0,
+                                                    tot_ct_enr > 0 & ct_tot_enr_w_gt > 0 ~ round((ct_tot_enr_w_gt *                                                     state_nonT1_perc_gt)) - tot_ct_gt_enr
+                                             )
+         )
+```
+
+```{r}
+#Convert negative underrep counts to 0
+OV_ct_missing_df[,16:17][(OV_ct_missing_df[,16:17]) < 0] <- 0
+```
+
+```{r}
+# Generate counts and percentages of missing students
+OV_ct_missing_df <- OV_ct_missing_df %>%
+  mutate(
+         OV_count_missing_ct_lower = OV_no_gt_missing_ct_lower + OV_underrep_missing_ct_lower,
+         OV_count_missing_ct_upper = OV_no_gt_missing_ct_upper + OV_underrep_missing_ct_upper,
+         OV_perc_missing_ct_lower = (OV_no_gt_missing_ct_lower + OV_underrep_missing_ct_lower)/(OV_no_gt_missing_ct_lower +                                               OV_underrep_missing_ct_lower + tot_ct_gt_enr),
+         OV_perc_missing_ct_upper = (OV_no_gt_missing_ct_upper + OV_underrep_missing_ct_upper)/(OV_no_gt_missing_ct_upper +                                               OV_underrep_missing_ct_upper + tot_ct_gt_enr)
+         )
+```
+
+Now we have all the missing percentages calculated we need to do a bit of cleaning before we can plot this data
+
+```{r}
+# Select only the columns we want to plot information from
+OV_ct_df <- OV_ct_missing_df %>%
+  select(LEA_STATE, NMCNTY, OV_count_missing_ct_lower, OV_count_missing_ct_upper, OV_perc_missing_ct_lower, OV_perc_missing_ct_upper)
+```
+
+```{r}
+#Save the full data frame to a CSV file
+write_csv(OV_ct_df, "C:/Users/donse/OneDrive/Documents/DSSG/gateways/OV_ct_df.csv")
+```
+

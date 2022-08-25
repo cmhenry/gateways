@@ -1,0 +1,63 @@
+---
+title: "27-2017-COUNTY-MEGATABLE-youth-missing-graphics-calculations"
+output: html_notebook
+---
+
+The purpose of this notebook is to create a data frame that we can use to plot the youth missing graphics for all demographics at the district level in the Shiny app from Figures 16-22 on Pages 115-118 of the Access Denied Report.We will call the final data frame "district_missing_df"
+
+# Change the column names so we can combine them into one data frame
+
+```{r}
+colnames(AM_ct_df) <- c("LEA_STATE", "NMCNTY", "total_ct_enr", "total_ct_gt_enr", "group_enr_ct", "group_gt_enr_ct", "group_missing_count_lower", "group_missing_count_upper", "group_missing_perc_lower", "group_missing_perc_upper", "group", "year", "region")
+```
+
+```{r}
+colnames(AS_ct_df) <- c("LEA_STATE", "NMCNTY", "total_ct_enr", "total_ct_gt_enr", "group_enr_ct", "group_gt_enr_ct", "group_missing_count_lower", "group_missing_count_upper", "group_missing_perc_lower", "group_missing_perc_upper", "group", "year", "region")
+```
+
+```{r}
+colnames(BL_ct_df) <- c("LEA_STATE", "NMCNTY", "total_ct_enr", "total_ct_gt_enr", "group_enr_ct", "group_gt_enr_ct", "group_missing_count_lower", "group_missing_count_upper", "group_missing_perc_lower", "group_missing_perc_upper", "group", "year", "region")
+```
+
+```{r}
+colnames(HI_ct_df) <- c("LEA_STATE", "NMCNTY", "total_ct_enr", "total_ct_gt_enr", "group_enr_ct", "group_gt_enr_ct", "group_missing_count_lower", "group_missing_count_upper", "group_missing_perc_lower", "group_missing_perc_upper", "group", "year", "region")
+```
+
+```{r}
+colnames(HP_ct_df) <- c("LEA_STATE", "NMCNTY", "total_ct_enr", "total_ct_gt_enr", "group_enr_ct", "group_gt_enr_ct", "group_missing_count_lower", "group_missing_count_upper", "group_missing_perc_lower", "group_missing_perc_upper", "group", "year", "region")
+```
+
+```{r}
+colnames(TR_ct_df) <- c("LEA_STATE", "NMCNTY", "total_ct_enr", "total_ct_gt_enr", "group_enr_ct", "group_gt_enr_ct", "group_missing_count_lower", "group_missing_count_upper", "group_missing_perc_lower", "group_missing_perc_upper", "group", "year", "region")
+```
+
+```{r}
+colnames(WH_ct_df) <- c("LEA_STATE", "NMCNTY", "total_ct_enr", "total_ct_gt_enr", "group_enr_ct", "group_gt_enr_ct", "group_missing_count_lower", "group_missing_count_upper", "group_missing_perc_lower", "group_missing_perc_upper", "group", "year", "region")
+```
+
+# Bind all groups together to get the 2015 data frame
+
+```{r}
+# Stack upper and lower data frames on top of each other to get our final data frame for plotting. 
+county_missing_df <- rbind(AM_ct_df, AS_ct_df, BL_ct_df, HI_ct_df, HP_ct_df, TR_ct_df, WH_ct_df)
+```
+
+# Add state gt percentages to the data frame so that we can plot them as the slopes of the lines in scatterplots.
+# Use state missing totals df generated in the state level folder
+
+```{r}
+# Create data frame for statewide gt percentages
+perc_gt_df <- state_missing_totals_df %>%
+  select(LEA_STATE, state_perc_gt, state_nonT1_perc_gt)
+```
+
+
+```{r}
+# Add statewide gt percentages to district df
+county_missing_df <- county_missing_df %>%
+  left_join(perc_gt_df, by = c("LEA_STATE" = "LEA_STATE"))
+```
+
+
+
+

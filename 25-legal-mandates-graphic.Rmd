@@ -1,0 +1,59 @@
+---
+title: "25-legal-mandates-graphic"
+output: html_notebook
+---
+
+The purpose of this notebook is to recreate the legal mandates graphic from the Access Denied Report. Our goal was to recreate this graphic with the most up to date data possible. The up to date data on whether or not states have laws and funding for gifted education that we used to create this plot came from the National Association for Gifted Children's website https://nagc.org/state-of-states. We created a data frame by looking at the data available on this website and matching it to the structure of the data from the Access Denied report. That data frame is saved to box. 
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2, plotly)
+```
+
+# Load data from box
+
+This data frame is data collected from the NAGC state of the states report and then reshaped to fit the form of the data used to create the Legal Mandates Graphic from the Access Denied report. We have a data frame that we can use to plot a similar legal mandates graphic saved in the folder in box titled "state_legal_mandates_data" and we can upload that now.
+
+```{r}
+
+#Load NAGC data 
+NAGC_ploting_df <- read_csv("data/state_legal_mandates_data/NAGC_ploting_df.csv")
+```
+
+If you wish to update this data frame with more current data you would need to collect it from and updated NAGC report here https://nagc.org/state-of-states. (The date we used for this data frame is 2018-2019).
+
+# Create the legal mandates plot with GGplot
+
+With the data frame we can recreate the legal mandates plot from the access denied report with ggplot and plotly so that it has rollover text too. Our stakeholders also wanted the funding variable to be binary in this report so there are only two different levels for state funding now (No state funding or State Funding (partial or full)).
+
+```{r}
+# Plot the different groupings for the different legal mandate and funding types for different states
+
+legal_mandates_plot <- ggplot(NAGC_ploting_df, aes(x = description, y = count, fill = funding_description, text = sprintf("Number of States: %s<br>%s<br>States: %s", count, funding_description, states))) +
+  geom_bar(stat = "Identity") +
+  scale_y_continuous(breaks = seq(0,25,5), limits = c(0, 26))+
+  scale_fill_manual(breaks = c("State Funding (Partial or Full)", "No State Funding"), 
+                       values=c("navyblue", "darkorange1")) +
+  labs(
+    title = "Legal Mandates and State Funding For Gifted Education",
+    subtitle = "From the NAGC's 2018-2019 State of the States in Gifted Education",
+    y = "Number of states",
+    x = ""
+  ) +
+  theme_linedraw() +
+  theme(legend.title = element_blank(),
+        panel.grid.major.x = element_blank())
+
+```
+
+Finally we will run the plot through ggplotly to add rollover text.
+
+```{r}
+#Plot the Legal Mandates Plot with Hover text using ggplotly
+ggplotly(legal_mandates_plot, tooltip = "text")
+```
+
+For more detailed information on specific states please visit https://nagc.org/state-of-states.
+

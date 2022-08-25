@@ -1,0 +1,112 @@
+---
+title: "27-COUNTY-youth-missing-graphics-calculations"
+output: html_notebook
+---
+
+The purpose of this notebook is to create a data frame that we can use to make all the calculations needed to find the missing percentages from different demographic groups to replicate the graphics from Figures 16-22 on Pages 115-118 of the Access Denied Report.  We will make all of these calculations in the other notebooks that start with 27 and then append each notebook right after the 27 with the group the calculations are being made for, but this one will be used to load in the data and create a data frame called "state_missing_totals_df" which will be used as a starting point for the calculations for all other demographic groups.
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, arrow, readr, assertr, ggplot2)
+```
+
+# Load wide data to create the graphics
+
+```{r}
+#Load wide ocr data
+ocr_15_wide <- read_feather("/data/OCR-transformed/2015/ocr_2015_wide.feather")
+```
+
+```{r}
+#Load wide ocr data
+ocr_17_wide <- read_feather("/data/OCR-transformed/2017/ocr_2017_wide.feather")
+```
+
+# Change negative values to NA
+
+```{r}
+# # Fix the 2015 wide data
+# ocr_15_wide <- ocr_15_wide %>%
+#   select(COMBOKEY, LEA_STATE, LEAID, SCHID, SCH_GT_IND, LOCALE15, LOCALE15_original, TITLEI, TITLEI_original, everything())
+# 
+# ocr_15_wide[,10:121][ocr_15_wide[,10:121] < 0] <- NA
+
+# Fix the 2017 wide data
+ocr_17_wide <- ocr_17_wide %>%
+  select(COMBOKEY, LEA_STATE, LEAID, SCHID, SCH_GT_IND, CNTY, NMCNTY, LOCALE, LOCALE_original, TITLEI, TITLEI_original, everything())
+
+ocr_17_wide[,12:53][ocr_17_wide[,12:53] < 0] <- NA
+```
+
+
+
+## 1. Calculate GT Enrollment percentage for the states as a whole and in non title 1 schools
+
+We want to calculate the total population of students in each state, the total population of gifted students in each state, and the percentage of students in GT programs in each state.
+
+```{r}
+# Create a data frame to find percentage of students in GT programs in each state
+state_totals_df_17 <- ocr_17_wide %>%
+  group_by(LEA_STATE) %>%
+  summarise(tot_st_enr = (sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE)), tot_st_gt_enr = (sum(TOT_GTENR_M,na.rm = TRUE) + sum(TOT_GTENR_F,na.rm = TRUE)), state_perc_gt = (sum(TOT_GTENR_M,na.rm = TRUE) + sum(TOT_GTENR_F,na.rm = TRUE))/(sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE))) %>%
+  ungroup()
+```
+
+```{r}
+# Create a data frame to find the percentage of students in GT programs in non title one schools in each state
+state_nonT1_totals_df_17 <- ocr_17_wide %>%
+  filter(TITLEI == "No") %>%
+  group_by(LEA_STATE) %>%
+  summarise(st_tot_nonT1_enr = sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE), st_tot_nonT1_gt_enr = sum(TOT_GTENR_M,na.rm = TRUE) + sum(TOT_GTENR_F,na.rm = TRUE), state_nonT1_perc_gt = (sum(TOT_GTENR_M,na.rm = TRUE) + sum(TOT_GTENR_F,na.rm = TRUE))/(sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE))) %>%
+  ungroup()
+```
+
+```{r}
+# Join the two data frames together to get our initial missing_df
+state_missing_totals_df <- state_totals_df_17 %>%
+  left_join(state_nonT1_totals_df_17, by = c("LEA_STATE" = "LEA_STATE"))
+```
+
+# Store a variable for nationwide gt percentage
+
+In some states there is no gifted education offered at all. For those cases we want to show missingness compared to the national average so we will find and store that variable here. 
+
+```{r}
+# Find National gt percentage
+national_gt_avg <- (sum(ocr_17_wide$TOT_GTENR_M,na.rm = TRUE) + sum(ocr_17_wide$TOT_GTENR_F,na.rm = TRUE))/(sum(ocr_17_wide$TOT_ENR_M,na.rm = TRUE) + sum(ocr_17_wide$TOT_ENR_F,na.rm = TRUE))
+
+```
+
+```{r}
+#Find national gt percentage for non title 1 schools
+nont1_17 <- ocr_17_wide %>%
+  filter(TITLEI == "No")
+# Find National gt percentage
+national_gt_avg_nont1 <- (sum(nont1_17$TOT_GTENR_M,na.rm = TRUE) + sum(nont1_17$TOT_GTENR_F,na.rm = TRUE))/(sum(nont1_17$TOT_ENR_M,na.rm = TRUE) + sum(nont1_17$TOT_ENR_F,na.rm = TRUE))
+
+```
+
+
+# Get overall calculations on a county level
+
+```{r}
+# Create a data frame to find percentage of students in GT programs in each county
+cn_totals_df_17 <- ocr_17_wide %>%
+  group_by(LEA_STATE, NMCNTY) %>%
+  summarise(tot_ct_enr = (sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE)), tot_ct_gt_enr = (sum(TOT_GTENR_M,na.rm = TRUE) + sum(TOT_GTENR_F,na.rm = TRUE)), ct_perc_gt = (sum(TOT_GTENR_M,na.rm = TRUE) + sum(TOT_GTENR_F,na.rm = TRUE))/(sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE))) %>%
+  ungroup()
+```
+
+# Combine the data frames to compare district level data to state level data
+
+```{r}
+# create df for state and cn level data
+cn_and_state_overall_df <- cn_totals_df_17 %>%
+  left_join(state_missing_totals_df, by = c("LEA_STATE" = "LEA_STATE"))
+```
+
+## 2. Add the same calculations for different demographic groups
+
+Now we can use the original wide data to calculate these same percentages for different demographic groups and then tack those calculations on to the original data frame "cn_and_overall_df". We will make all of these calculations in the other notebooks that start with 27 and then append each notebook right after the 27 with the group the calculations are being made for. Check out the other notebooks that start with 27 for further calculation instructions.

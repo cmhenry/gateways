@@ -1,0 +1,30 @@
+---
+title: "CA_data_extraction"
+output: html_notebook
+---
+
+```{r}
+load('data/dashboard_data/dbdata_2017.RData')
+state_level_missing_plots_df <- vroom("data/missingness_data/state_level_missing_barplots_df.csv")
+county_missing_df <- vroom("data/missingness_data/county_missing_df.csv")
+```
+
+```{r}
+ca_counties_coef <- counties_coef %>% filter(STUSPS == 'CA')
+ca_county_missing_df <- county_missing_df %>% filter(LEA_STATE == 'CA')
+NAGC_CA <- NAGC_states %>% filter(state == 'California')
+ca_barplots <- state_barplots_df %>% filter(LEA_STATE == 'CA')
+ca_missing_plots <- state_level_missing_plots_df %>% filter(LEA_STATE == 'CA')
+ca_coef <- states_coef %>% filter(STUSPS == 'CA')
+```
+
+
+```{r}
+ca_coef <- st_set_geometry(ca_coef, NULL)
+write.csv(ca_coef,"CA_state.csv", row.names = FALSE)
+ca_counties_coef <- st_set_geometry(ca_counties_coef, NULL)
+ca_counties_coef = as.matrix(ca_counties_coef)
+write.csv(ca_counties_coef, 'CA_county.csv', row.names = FALSE)
+write.csv(ca_county_missing_df, 'CA_county_missingness.csv', row.names = FALSE)
+```
+

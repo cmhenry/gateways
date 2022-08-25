@@ -1,0 +1,167 @@
+---
+title: "27-NATIONAL-REGIONAL-youth-missing-graphics-calculations"
+output: html_notebook
+---
+
+The purpose of this notebook is to create a data frame that we can use to plot the youth missing graphic from Figures 16-22 on Pages 115-118 of the Access Denied Report.We will call the final data frame "US_missing_df."
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2)
+```
+
+Now we can use the original wide data to calculate the missing percentages for different demographic groups and then tack those calculations on to the original data frame "state_missing_totals_df" that we created in the 27-youth-missing-graphics-calculations RMD file.
+
+Now we need to break down to populations by students who are in schools that offer GT programs and schools that do not offer GT programs
+
+```{r}
+# Find the total number of students in schools that do not offer GT services
+enrollment_no_gt_df <- ocr_17_wide %>%
+  filter(SCH_GT_IND == "No") %>%
+  group_by(LEA_STATE) %>%
+  summarise(tot_enr_no_gt = (sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE))) %>%
+  ungroup()
+  
+```
+
+```{r}
+# Find the total number of students in schools that offer GT services
+enrollment_w_gt_df <- ocr_17_wide %>%
+  filter(SCH_GT_IND == "Yes") %>%
+  group_by(LEA_STATE) %>%
+  summarise(tot_enr_w_gt = sum(TOT_ENR_M,na.rm = TRUE) + sum(TOT_ENR_F,na.rm = TRUE)) %>%
+  ungroup()
+```
+
+```{r}
+# Add number of students from schools with different service types to full DF
+USA_missing_df <- state_missing_totals_df %>%
+  left_join(enrollment_no_gt_df, by = c("LEA_STATE" = "LEA_STATE")) %>%
+  left_join(enrollment_w_gt_df, by = c("LEA_STATE" = "LEA_STATE"))
+
+```
+
+```{r}
+#Replace NAs for DC and PR with 0s
+USA_missing_df[8,9] <- 0
+USA_missing_df[40,9] <- 0
+```
+
+```{r}
+# Find nationwide gifted percentage
+US_perc_gt <- sum(USA_missing_df$tot_gt_enr)/sum(USA_missing_df$tot_enr)
+US_perc_gt_nonT1 <- sum(USA_missing_df$tot_nonT1_gt_enr)/sum(USA_missing_df$tot_nonT1_enr)
+```
+
+
+Now our data frame has all the columns we need to calculate the number of missing AM students from gt programs.
+
+```{r}
+#Find number of students missing from schools that do not offer gifted education
+USA_missing_df <- USA_missing_df %>%
+  mutate(USA_missing_no_GT_lower = round(tot_enr_no_gt * state_perc_gt), USA_missing_no_GT_upper = round(tot_enr_no_gt * state_nonT1_perc_gt))
+```
+
+```{r}
+# Clean up the row for DC
+USA_missing_df[8,10] <- round(USA_missing_df[8,8] * US_perc_gt)
+USA_missing_df[8,11] <- round(USA_missing_df[8,8] * US_perc_gt_nonT1)
+
+# Clean up the row for PR
+USA_missing_df[40,10] <- round(USA_missing_df[40,8] * US_perc_gt)
+USA_missing_df[40,11] <- round(USA_missing_df[40,8] * US_perc_gt_nonT1)
+```
+
+```{r}
+#Find number of underrepresented students from gifted education
+USA_missing_df <- USA_missing_df %>%
+  mutate(USA_missing_underrep_lower = (round((tot_enr_w_gt * US_perc_gt)) - tot_gt_enr), USA_missing_underrep_upper = (round(tot_enr_w_gt * state_nonT1_perc_gt) - tot_gt_enr))
+```
+
+Some under representation values become negative if there is a higher percentage of students in gifted education from that demographic than the percentage of gifted education in the state. We do not consider overrepresentation to be a problem so we will change the negative under representation values to zeros. 
+
+```{r}
+#Change negative under representation values to zeros
+USA_missing_df[,12:13][USA_missing_df[,12:13] < 0] <- 0
+```
+
+Now we can calculate the upper and lower bounds of the missingness percentages. 
+
+```{r}
+# calculate the upper and lower bounds of the missingness percentages.
+USA_missing_df <- USA_missing_df %>%
+  mutate(perc_missing_lower = ((USA_missing_no_GT_lower + USA_missing_underrep_lower)/(tot_gt_enr + USA_missing_no_GT_lower + USA_missing_underrep_lower)), perc_missing_upper = ((USA_missing_no_GT_upper + USA_missing_underrep_upper)/(tot_gt_enr + USA_missing_no_GT_upper + USA_missing_underrep_upper)))
+```
+
+Now we have all the missing percentages calculated we need to do a bit of cleaning before we can plot this data.
+
+```{r}
+# Select only necessary columns for plotting
+US_missing_map_df <- USA_missing_df %>%
+  select(LEA_STATE, tot_gt_enr, USA_missing_no_GT_lower, USA_missing_no_GT_upper, USA_missing_underrep_lower, USA_missing_underrep_upper, perc_missing_lower, perc_missing_upper)
+```
+
+```{r}
+#Create total counts
+US_missing_map_df <- US_missing_map_df %>%
+  mutate(missing_count_lower = USA_missing_no_GT_lower + USA_missing_underrep_lower, missing_count_upper = USA_missing_no_GT_upper + USA_missing_underrep_upper)
+```
+
+```{r}
+# Add the upperboundry and the lower boundry to the data frame and make sure the missing percentage mins and maxs are the upper and lower boundries
+US_missing_map_df <- US_missing_map_df %>%
+  rowwise()%>%
+  mutate(missing_perc_low = min(perc_missing_upper, perc_missing_lower), 
+         missing_perc_up = max(perc_missing_upper, perc_missing_lower),
+         missing_count_low = min(missing_count_lower, missing_count_upper),
+         missing_count_up = max(missing_count_lower, missing_count_upper)) %>%
+  ungroup()
+```
+
+```{r}
+# Select only the columns we want to use to display information
+national_missing_df <- US_missing_map_df %>%
+  select(LEA_STATE, tot_gt_enr, missing_count_low, missing_count_up, missing_perc_low, missing_perc_up)
+```
+
+
+```{r}
+# add a column for region
+national_missing_df <- national_missing_df %>%
+  mutate(region = case_when(LEA_STATE == "CA" | LEA_STATE == "OR" | LEA_STATE == "WA" ~ "Pacific",
+                            LEA_STATE == "AK" | LEA_STATE == "HI" | LEA_STATE == "PR" ~ "Noncontiguous",
+                            LEA_STATE == "AZ" | LEA_STATE == "NM" | LEA_STATE == "TX" | LEA_STATE == "OK" ~ "Southwest",
+                            LEA_STATE == "NV" | LEA_STATE == "UT" | LEA_STATE == "CO" | LEA_STATE == "WY" |  LEA_STATE == "ID" |                              LEA_STATE == "MT" ~ "Rocky Mountains",
+                            LEA_STATE == "SD" | LEA_STATE == "ND" | LEA_STATE == "NE" | LEA_STATE == "KS" | LEA_STATE == "MN" |                               LEA_STATE == "IA" | LEA_STATE == "MO" | LEA_STATE == "WI" | LEA_STATE == "IL" | LEA_STATE == "MI" |                               LEA_STATE == "IN" | LEA_STATE == "OH" ~ "Midwest",
+                            LEA_STATE == "PA" | LEA_STATE == "NJ" | LEA_STATE == "NY" | LEA_STATE == "CT" | LEA_STATE == "RI" |                               LEA_STATE == "MA" | LEA_STATE == "VT" | LEA_STATE == "NH" | LEA_STATE == "ME" ~ "Northeast",
+                            LEA_STATE == "LA" | LEA_STATE == "AR" | LEA_STATE == "MS" | LEA_STATE == "AL" | LEA_STATE == "TN" |                               LEA_STATE == "KY" | LEA_STATE == "WV" | LEA_STATE == "DE" | LEA_STATE == "MD" | LEA_STATE == "DC" |                               LEA_STATE == "VA" | LEA_STATE == "NC" | LEA_STATE == "SC" | LEA_STATE == "GA" | LEA_STATE == "FL"                                 ~ "Southeast"))  
+    
+```
+
+Now we have a data frame for overall missingness on a state level. 
+
+```{r}
+# Save overall missingness on state level data frame to csv
+write_csv(national_missing_df, "C:/Users/donse/OneDrive/Documents/DSSG/gateways/national_missing_df.csv")
+```
+
+# Regional Missingness
+
+Now we want to add calcualtions to find out missingness by region in case we want to display that data. 
+
+```{r}
+regional_missing_df <- national_missing_df %>%
+  group_by(region) %>%
+  summarise(region_missing_count_lower = sum(missing_count_low),
+            region_missing_count_upper = sum(missing_count_up),
+            region_missing_perc_lower = sum(missing_count_low)/(sum(missing_count_low)+sum(tot_gt_enr)),
+            region_missing_perc_upper = sum(missing_count_up)/(sum(missing_count_up)+sum(tot_gt_enr))
+            )
+```
+
+```{r}
+# Save overall missingness on state level data frame to csv
+write_csv(regional_missing_df, "C:/Users/donse/OneDrive/Documents/DSSG/gateways/regional_missing_df.csv")
+```

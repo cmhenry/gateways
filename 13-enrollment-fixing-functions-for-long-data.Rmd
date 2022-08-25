@@ -1,0 +1,64 @@
+---
+title: "13-enrollment-fixing-functions-for-long-data"
+output: html_notebook
+---
+
+The purpose of this notebook is to create functions to make the enrollment variable useable for the long data format. 
+
+# Load required packages
+
+
+```{r, purl = FALSE}
+#Load required packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, assertr)
+```
+
+# Function to look at whether or not gifted education is offered at the school level
+
+This first function pulls the rows out of the long data frame where the value of the enrollment variable is either "Yes" or "No" and puts them into their own data frame.
+
+```{r}
+#Create a function to remove the non numeric enrollment values
+
+get_services_offered_by_school_df <- function(df) {
+ df <- df %>%
+    filter(enrollment == "Yes" | enrollment == "No")
+ return(df)
+}
+```
+
+```{r, purl = FALSE}
+#Run the function and create a new data frame
+sevice_offered_df <- get_services_offered_by_school_df(df_ocr_long)
+```
+
+The new "service_offered_df" is a data frame where the enrollment variable indicates whether or not each school has gifted services offered. 
+
+# Function to fix anomolies in the enrollment variable
+
+The enrollment_fix_long() function is one that will make the enrollment variable usable in the long data frame. It will convert the column to numeric and it will remove data anomalies like negative numbers. 
+
+```{r}
+# Create a function to make the enrollment variable usable
+
+enrollment_fix_long <- function(df) {
+# make sure only numeric values are left in the enrollment variable
+ df <- df %>%
+    filter(enrollment != "Yes" | enrollment != "No")
+# Convert enrollment variable to numeric
+ df$enrollment <- as.numeric(df$enrollment)
+# Convert negative enrollments to NAs
+ df[,10][df[,10] < 0] <- NA
+# Return data frame with zeroed out enrollments
+ return(df)
+}
+```
+
+
+```{r, purl = FALSE}
+# Run the function on the long data to fix the enrollment variable
+df_ocr_long_fixed <- enrollment_fix_long(df_ocr_long)
+```
+
+Now we have two new long data frames where the enrollment variable is usable!

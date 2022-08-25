@@ -1,0 +1,121 @@
+---
+title: "28-functions-recreate-will-data"
+author: "Mafe Senosain"
+date: "7/23/2021"
+output: html_document
+---
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr,arrow,testit,feather)
+```
+
+# Import subpop functions
+```{r}
+source(knitr::purl("12-subpopulation_function.Rmd", output = tempfile()))
+```
+
+# Define function
+```{r}
+gm_recreate <- function(ocr_wide_feather_path){
+  
+  # Read file
+  ocr_wide = arrow::read_feather(file=ocr_wide_feather_path)
+  
+  # Aggregate numbers using group_by by state and SCH_GT_IND
+  df_states_nolocale <- subpopulation_gentable(ocr_wide, groupby_colnames = c('LEA_STATE','TITLEI', 'SCH_GT_IND'))
+  df_states_nolocale_notitle <- subpopulation_gentable(ocr_wide, groupby_colnames = c('LEA_STATE', 'SCH_GT_IND'))
+  
+  # Generate a vector with state names
+  states <- unique(df_states_nolocale_notitle$LEA_STATE)
+  if('PR' %in% states) {
+    states <- states[-which(states =='PR')]
+  }
+  # Generate an empty df to store new data
+  df_gm <- data.frame(matrix(NA, nrow = length(states), 0))
+  # Iterate through states to compute access ratio per race
+  for (i in 1:length(states)){
+    # get a subset df for a specific state
+    df_state <- df_states_nolocale[df_states_nolocale$LEA_STATE == states[i],]
+    df_state_notitle <- df_states_nolocale_notitle[df_states_nolocale_notitle$LEA_STATE == states[i],]
+    
+    # get the index for SCH_GT_IND == 'Yes'
+    sch_yes_ii <- which(df_state$SCH_GT_IND == 'Yes')
+    
+    # get the index for TITLEI == 'Yes'
+    t1_yes_ii <- which(df_state$TITLEI == 'Yes')
+    
+    # get the index for TITLEI == 'No'
+    t1_no_ii <- which(df_state$TITLEI == 'No')
+    
+    # REP_INDEX cols index
+    ri_title_ii <- grep('REP_INDEX', colnames(df_state))
+    
+    # If state has no gifted
+    gifted_state <- "Yes" %in% df_state$SCH_GT_IND
+    # If state has no title
+    title_state <- "Yes" %in% df_state$TITLEI
+    gtyes_t1no = which(df_state$SCH_GT_IND == 'Yes' & df_state$TITLEI == 'No')
+    gtyes_t1yes = which(df_state$SCH_GT_IND == 'Yes' & df_state$TITLEI == 'Yes')
+    
+    # Create new cols
+    df_gm[i,'LEA_STATE'] <- states[i]
+    if(gifted_state){
+      df_gm[i, 'PERCENT_GT_ACCESS'] <- 100*sum(df_state$TOT_ENR[sch_yes_ii])/sum(df_state$TOT_ENR)
+      df_gm[i, 'PERCENT_GTID'] <- 100*sum(df_state$TOT_GTENR[sch_yes_ii])/sum(df_state$TOT_ENR[sch_yes_ii])
+      df_gm[i, 'PERCENT_GTID_NONT1'] <- 100*sum(df_state$TOT_GTENR[which(df_state$SCH_GT_IND == 'Yes' & df_state$TITLEI == 'No')])/sum(df_state$TOT_ENR[t1_no_ii])
+      df_gm[i, 'PERCENT_GTID_T1'] <- 100*sum(df_state$TOT_GTENR[which(df_state$SCH_GT_IND == 'Yes' & df_state$TITLEI == 'Yes')])/sum(df_state$TOT_ENR[t1_yes_ii])
+      df_gm[i, 'EQT_RATIO_GTID_T1NONT1'] <- df_gm[i, 'PERCENT_GTID_T1']/df_gm[i, 'PERCENT_GTID_NONT1']
+      
+      for(race in ri_title_ii){
+        df_gm[i, paste0(colnames(df_state)[race],'_OVERALL')] <- df_state_notitle[which(df_state_notitle$SCH_GT_IND=='Yes'), race-1]
+        if(title_state){
+          if(length(gtyes_t1no)>0){
+            df_gm[i, paste0(colnames(df_state)[race],'_NONT1')] <- df_state[gtyes_t1no, race]
+          }
+          if(length(gtyes_t1yes)>0) {
+            df_gm[i, paste0(colnames(df_state)[race],'_T1')] <- df_state[gtyes_t1yes, race]
+          }
+        }
+      }
+    }
+  }
+  
+  return(df_gm)
+  
+}
+```
+
+# Run function
+```{r, purl = FALSE}
+gm_2015 <- gm_recreate(ocr_wide_feather_path = 'data/OCR-transformed/2015/ocr_2015_wide.feather')
+gm_2017 <- gm_recreate(ocr_wide_feather_path = 'data/OCR-transformed/2017/ocr_2017_wide.feather')
+```
+
+# Edit colnames to match Will's app
+```{r}
+## Read in codebook
+gm_cb <- readxl::read_xlsx("data/maps_data/codebook_mapsapp.xlsx")
+colnames(gm_2015) <- gm_cb$varname
+colnames(gm_2017) <- gm_cb$varname
+```
+
+# Recreate gm_states
+```{r}
+library(albersusa)
+
+spdf <- usa_sf()
+spdf$State<-spdf$iso_3166_2
+
+## Join data and shapefile
+gm_states2015<-left_join(spdf,gm_2015,by="State")
+gm_states2017<-left_join(spdf,gm_2017,by="State")
+```
+
+# Save RData
+```{r}
+save(gm_2015, gm_2017, gm_cb, gm_states2015, gm_states2017, file = 'data/maps_data/updated_maps_data.RData')
+```
+

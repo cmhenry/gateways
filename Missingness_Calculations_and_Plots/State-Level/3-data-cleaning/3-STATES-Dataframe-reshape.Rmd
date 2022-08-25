@@ -1,0 +1,292 @@
+---
+title: "27-STATES-Dataframe-reshape"
+output: html_notebook
+---
+
+The purpose of this notebook is to reshape the missingness at the state level so that we have a data frame we can easily join with the other state level data in the shiny app. 
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2, plotly, viridis)
+```
+
+# Load Data
+
+We have used these other markdown files to create two mega tables for the shiny app to reference when it plots the missingness data. One megatable for state data and one megatable for county data. We will load that megatable in from Box now. 
+
+```{r}
+#Load missingness megatable from the box
+state_level_missing_plots_df <- read_csv("data/missingness_data/state_level_missing_barplots_df.csv")
+county_missing_df <- read_csv("data/missingness_data/county_missing_df.csv")
+overall_state_missing_df <- read_csv("data/missingness_data/national_missing_df.csv")
+```
+
+
+# Reshape data
+
+We want this data to be in a format where each state has it own row and each column has it's own different percentage. We will do that below.
+
+# Create a df to build on
+
+```{r}
+# Create a data frame with state and overall
+builder_df <- overall_state_missing_df %>%
+  select(LEA_STATE, missing_perc_low)
+```
+
+# AIAN Lower Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+AIAN_lower_df <- state_level_missing_plots_df %>%
+  filter(group == "AIAN") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Lower Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, AIAN_lower_df$percent_missing)
+```
+
+# Asian Lower Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+Asian_lower_df <- state_level_missing_plots_df %>%
+  filter(group == "Asian") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Lower Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, Asian_lower_df$percent_missing)
+```
+
+# Black Lower Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+Black_lower_df <- state_level_missing_plots_df %>%
+  filter(group == "Black") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Lower Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, Black_lower_df$percent_missing)
+```
+
+# Latinx Lower Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+Latinx_lower_df <- state_level_missing_plots_df %>%
+  filter(group == "Latinx") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Lower Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, Latinx_lower_df$percent_missing)
+```
+
+# NHPI Lower Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+NHPI_lower_df <- state_level_missing_plots_df %>%
+  filter(group == "NHPI") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Lower Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, NHPI_lower_df$percent_missing)
+```
+
+# TMR Lower Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+TMR_lower_df <- state_level_missing_plots_df %>%
+  filter(group == "TMR") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Lower Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, TMR_lower_df$percent_missing)
+```
+
+# White Lower Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+White_lower_df <- state_level_missing_plots_df %>%
+  filter(group == "White") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Lower Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, White_lower_df$percent_missing)
+```
+
+# Overall Upper Bound
+
+```{r}
+builder_df <- cbind(builder_df, overall_state_missing_df$missing_perc_up)
+```
+
+# AIAN Upper Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+AIAN_Upper_df <- state_level_missing_plots_df %>%
+  filter(group == "AIAN") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Upper Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, AIAN_Upper_df$percent_missing)
+```
+
+# Asian Upper Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+Asian_Upper_df <- state_level_missing_plots_df %>%
+  filter(group == "Asian") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Upper Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, Asian_Upper_df$percent_missing)
+```
+
+# Black Upper Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+Black_Upper_df <- state_level_missing_plots_df %>%
+  filter(group == "Black") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Upper Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, Black_Upper_df$percent_missing)
+```
+
+# Latinx Upper Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+Latinx_Upper_df <- state_level_missing_plots_df %>%
+  filter(group == "Latinx") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Upper Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, Latinx_Upper_df$percent_missing)
+```
+
+# NHPI Upper Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+NHPI_Upper_df <- state_level_missing_plots_df %>%
+  filter(group == "NHPI") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Upper Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, NHPI_Upper_df$percent_missing)
+```
+
+# TMR Upper Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+TMR_Upper_df <- state_level_missing_plots_df %>%
+  filter(group == "TMR") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Upper Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, TMR_Upper_df$percent_missing)
+```
+
+# White Lower Bound
+
+```{r}
+# filter state_level_missing_plots data frame to get a vector for the next row
+White_Upper_df <- state_level_missing_plots_df %>%
+  filter(group == "White") %>%
+  filter(year == 2017) %>%
+  filter(bound == "Upper Bound")
+```
+
+```{r}
+# Bind the next column on to the builder df
+builder_df <- cbind(builder_df, White_Upper_df$percent_missing)
+```
+
+# Change Column names
+
+```{r}
+# Give the data frame column names that will work with the shiny app
+colnames(builder_df) <- c("LEA_STATE", "Percent Missing Lower Bound Overall", "Percent Missing Lower Bound AIAN", "Percent Missing Lower Bound Asian", "Percent Missing Lower Bound Black", "Percent Missing Lower Bound Latinx", "Percent Missing Lower Bound NHPI", "Percent Missing Lower Bound TMR", "Percent Missing Lower Bound White", "Percent Missing Upper Bound Overall", "Percent Missing Upper Bound AIAN", "Percent Missing Upper Bound Asian", "Percent Missing Upper Bound Black", "Percent Missing Upper Bound Latinx", "Percent Missing Upper Bound NHPI", "Percent Missing Upper Bound TMR", "Percent Missing Upper Bound White")
+```
+
+# Make sure the upper bound is the sum of the lower bound and the upper bound from the plotting df
+
+```{r}
+#Add columns for true upper bounds
+up_fix_df <- national_missing_df %>%
+  mutate(
+    AM_up_fix = `Percent Missing Lower Bound AIAN` + `Percent Missing Upper Bound AIAN`,
+    AS_up_fix = `Percent Missing Lower Bound Asian` + `Percent Missing Upper Bound Asian`,
+    BL_up_fix = `Percent Missing Lower Bound Black` + `Percent Missing Upper Bound Black`,
+    HI_up_fix = `Percent Missing Lower Bound Latinx` + `Percent Missing Upper Bound Latinx`,
+    HP_up_fix = `Percent Missing Lower Bound NHPI` + `Percent Missing Upper Bound NHPI`,
+    TR_up_fix = `Percent Missing Lower Bound TMR` + `Percent Missing Upper Bound TMR`,
+    WH_up_fix = `Percent Missing Lower Bound White` + `Percent Missing Upper Bound White`
+  )
+```
+
+```{r}
+# Return to original builder df with correct upper bounds
+builder_df <- up_fix_df %>%
+  select(LEA_STATE, `Percent Missing Lower Bound Overall`, `Percent Missing Lower Bound AIAN`, `Percent Missing Lower Bound Asian`, `Percent Missing Lower Bound Black`, `Percent Missing Lower Bound Latinx`, `Percent Missing Lower Bound NHPI`, `Percent Missing Lower Bound TMR`, `Percent Missing Lower Bound White`, `Percent Missing Upper Bound Overall`, AM_up_fix, AS_up_fix, BL_up_fix, HI_up_fix, HP_up_fix, TR_up_fix, WH_up_fix)
+```
+
+```{r}
+# Change Column names
+
+# Give the data frame column names that will work with the shiny app
+colnames(builder_df) <- c("LEA_STATE", "Percent Missing Lower Bound Overall", "Percent Missing Lower Bound AIAN", "Percent Missing Lower Bound Asian", "Percent Missing Lower Bound Black", "Percent Missing Lower Bound Latinx", "Percent Missing Lower Bound NHPI", "Percent Missing Lower Bound TMR", "Percent Missing Lower Bound White", "Percent Missing Upper Bound Overall", "Percent Missing Upper Bound AIAN", "Percent Missing Upper Bound Asian", "Percent Missing Upper Bound Black", "Percent Missing Upper Bound Latinx", "Percent Missing Upper Bound NHPI", "Percent Missing Upper Bound TMR", "Percent Missing Upper Bound White")
+
+```
+
+# Save the data into a data frame in box that can be loaded by the shiny app with read_csv

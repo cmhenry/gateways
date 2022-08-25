@@ -1,0 +1,147 @@
+---
+title: "22-scatterplot"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr,arrow,leaflet,maps,sf,ggplot2, ggrepel,testit,assertr, usmap,usdata)
+#setwd('/Users/sunnyli/Desktop/DSSG/gateways')
+```
+
+```{r}
+df_ocr_wide <- arrow::read_feather("data/OCR-transformed/2015/ocr_2015_wide.feather")
+
+```
+
+```{r}
+enrollment_fix_wide <- function(df) {
+# reorder the data frame to put character columns first and numeric columns last
+ df <- df %>%
+   select(COMBOKEY, LEA_STATE, LEAID, SCHID, SCH_GT_IND, LOCALE15, TITLEI, TITLEI_original, LOCALE15_original, everything())
+# Convert negative enrollments to NAs
+ df[,10:121][df[,10:121] < 0] <- NA
+# Return data frame with zeroed out enrollments
+ return(df)
+}
+
+
+
+```
+
+
+```{r}
+# Import functions
+source(knitr::purl('14-enrollment-fixing-functions-for-wide-data.Rmd'))
+source(knitr::purl('12-subpopulation_function.Rmd'))
+```
+
+```{r}
+# Remove negative values from enrollment columns
+df_ocr_wide <- enrollment_fix_wide(df_ocr_wide)
+```
+
+```{r}
+# Aggregate numbers using group_by by state and SCH_GT_IND
+df_states_nolocale_notitle <- subpopulation_gentable(df_ocr_wide, groupby_colnames = c('LEA_STATE', 'SCH_GT_IND'))
+# Generate a vector with state names
+states <- unique(df_states_nolocale_notitle$LEA_STATE)
+# Generate an empty df to store new data
+df_AR <- as.data.frame(matrix(NA, nrow = length(states), 0))
+# Iterate through states to comput access ratio per race
+for (i in 1:length(states)){
+  # get a subset df for a specific state
+  df_state <- df_states_nolocale_notitle[df_states_nolocale_notitle$LEA_STATE == states[i],]
+  # get the index for SCH_GT_IND == 'Yes'
+  sch_yes_ii <- which(df_state$SCH_GT_IND == 'Yes')
+  # denominator equation
+  enr_in_gt_to_total_enr <- (df_state$TOT_ENR[sch_yes_ii]/sum(df_state$TOT_ENR))
+  # filling the columns
+ 
+  df_AR[i,'LEA_STATE'] <- states[i]
+  if(states[i]!='DC'){
+  df_AR[i,'HI_ACC_RATIO'] = (df_state$HI_ENR[sch_yes_ii]/sum(df_state$HI_ENR))/enr_in_gt_to_total_enr
+  df_AR[i,'AM_ACC_RATIO'] = (df_state$AM_ENR[sch_yes_ii]/sum(df_state$AM_ENR))/enr_in_gt_to_total_enr
+  df_AR[i,'AS_ACC_RATIO'] = (df_state$AS_ENR[sch_yes_ii]/sum(df_state$AS_ENR))/enr_in_gt_to_total_enr
+  df_AR[i,'HP_ACC_RATIO'] = (df_state$HP_ENR[sch_yes_ii]/sum(df_state$HP_ENR))/enr_in_gt_to_total_enr
+  df_AR[i,'BL_ACC_RATIO'] = (df_state$BL_ENR[sch_yes_ii]/sum(df_state$BL_ENR))/enr_in_gt_to_total_enr
+  df_AR[i,'WH_ACC_RATIO'] = (df_state$WH_ENR[sch_yes_ii]/sum(df_state$WH_ENR))/enr_in_gt_to_total_enr
+  df_AR[i,'TR_ACC_RATIO'] = (df_state$TR_ENR[sch_yes_ii]/sum(df_state$TR_ENR))/enr_in_gt_to_total_enr
+  }
+}
+```
+
+
+
+```{r}
+df_RI <- subpopulation_gentable(df_ocr_wide, groupby_colnames = c('LEA_STATE'))
+head(df_RI)
+df_final <- df_RI %>% left_join(df_AR, by = "LEA_STATE")
+```
+
+
+```{r}
+p<-ggplot(df_final, aes(x=HI_ACC_RATIO,y=HI_REP_INDEX,label = LEA_STATE)) + 
+    geom_point() + xlim(0, 1.8) + ylim(0,1.5)
+
+p + geom_hline(yintercept=0.95, linetype="dashed", color = "orange") + geom_vline(xintercept = 0.95, linetype="dashed", 
+                color = "orange") + geom_hline(yintercept=0.8, linetype="dashed", color = "blue") + geom_vline(xintercept = 0.8, linetype="dashed", color = "blue") + geom_text(check_overlap = TRUE,angle = 45,    vjust = -1, size = 2)
+```
+```{r}
+
+p<-ggplot(df_final, aes(x=BL_ACC_RATIO,y=BL_REP_INDEX,label = LEA_STATE)) + 
+    geom_point() + xlim(0, 1.8) + ylim(0,1.5)
+
+p + geom_hline(yintercept=0.95, linetype="dashed", color = "orange") + geom_vline(xintercept = 0.95, linetype="dashed", 
+                color = "orange") + geom_hline(yintercept=0.8, linetype="dashed", color = "blue") + geom_vline(xintercept = 0.8, linetype="dashed", color = "blue") + geom_text(check_overlap = TRUE,angle = 45,    vjust = -1, size = 2)
+
+```
+```{r}
+
+p<-ggplot(df_final, aes(x=WH_ACC_RATIO,y=WH_REP_INDEX,label = LEA_STATE)) + 
+    geom_point() + xlim(0, 1.8) + ylim(0,1.5)
+
+p + geom_hline(yintercept=0.95, linetype="dashed", color = "orange") + geom_vline(xintercept = 0.95, linetype="dashed", 
+                color = "orange") + geom_hline(yintercept=0.8, linetype="dashed", color = "blue") + geom_vline(xintercept = 0.8, linetype="dashed", color = "blue") + geom_text(check_overlap = TRUE,angle = 45,    vjust = -1, size = 2)
+
+```
+```{r}
+
+p<-ggplot(df_final, aes(x=AS_ACC_RATIO,y=AS_REP_INDEX,label = LEA_STATE)) + 
+    geom_point() + xlim(0, 1.8) + ylim(0,1.5)
+
+p + geom_hline(yintercept=0.95, linetype="dashed", color = "orange") + geom_vline(xintercept = 0.95, linetype="dashed", 
+                color = "orange") + geom_hline(yintercept=0.8, linetype="dashed", color = "blue") + geom_vline(xintercept = 0.8, linetype="dashed", color = "blue") + geom_text(check_overlap = TRUE,angle = 45,    vjust = -1, size = 2)
+
+```
+
+```{r}
+p<-ggplot(df_final, aes(x=HP_ACC_RATIO,y=HP_REP_INDEX,label = LEA_STATE)) + 
+    geom_point() + xlim(0, 1.8) + ylim(0,1.5)
+
+p + geom_hline(yintercept=0.95, linetype="dashed", color = "orange") + geom_vline(xintercept = 0.95, linetype="dashed", 
+                color = "orange") + geom_hline(yintercept=0.8, linetype="dashed", color = "blue") + geom_vline(xintercept = 0.8, linetype="dashed", color = "blue") + geom_text(check_overlap = TRUE,angle = 45,    vjust = -1, size = 2)
+
+```
+
+```{r}
+
+p<-ggplot(df_final, aes(x=AM_ACC_RATIO,y=AM_REP_INDEX,label = LEA_STATE)) + 
+    geom_point() + xlim(0, 1.8) + ylim(0,1.5)
+
+p + geom_hline(yintercept=0.95, linetype="dashed", color = "orange") + geom_vline(xintercept = 0.95, linetype="dashed", 
+                color = "orange") + geom_hline(yintercept=0.8, linetype="dashed", color = "blue") + geom_vline(xintercept = 0.8, linetype="dashed", color = "blue") + geom_text(check_overlap = TRUE,angle = 45,    vjust = -1, size = 2)
+
+```
+
+```{r}
+p<-ggplot(df_final, aes(x=TR_ACC_RATIO,y=TR_REP_INDEX,label = LEA_STATE)) + 
+    geom_point() + xlim(0, 1.8) + ylim(0,1.5)
+
+p + geom_hline(yintercept=0.95, linetype="dashed", color = "orange") + geom_vline(xintercept = 0.95, linetype="dashed", 
+                color = "orange") + geom_hline(yintercept=0.8, linetype="dashed", color = "blue") + geom_vline(xintercept = 0.8, linetype="dashed", color = "blue") + geom_text(check_overlap = TRUE,angle = 45,    vjust = -1, size = 2)
+```

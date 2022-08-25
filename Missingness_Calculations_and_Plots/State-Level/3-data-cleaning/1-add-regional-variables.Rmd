@@ -1,0 +1,43 @@
+---
+title: "27-add-regional-variables"
+output: html_notebook
+---
+
+The purpose of this notebook is to add a column to indicate regions onto the mega missingness data frame
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2, plotly)
+```
+
+# Load Data
+
+We have used these other markdown files to create a mega table for the shiny app to reference when it plots the missingness data. We will load that megatable in from Box now. 
+
+```{r}
+#Load missingness megatable from the box
+full_missing_plots_df <- read.csv("data/full_missing_plots_df.csv")
+```
+
+# Add regional data
+
+```{r}
+#Add regional information to the data frame for plotting
+
+state_level_missing_plot_df <- full_missing_plots_df %>%
+  mutate(region = case_when(LEA_STATE == "CA" | LEA_STATE == "OR" | LEA_STATE == "WA" ~ "Pacific",
+                            LEA_STATE == "AK" | LEA_STATE == "HI" | LEA_STATE == "PR" ~ "Noncontiguous",
+                            LEA_STATE == "AZ" | LEA_STATE == "NM" | LEA_STATE == "TX" | LEA_STATE == "OK" ~ "Southwest",
+                            LEA_STATE == "NV" | LEA_STATE == "UT" | LEA_STATE == "CO" | LEA_STATE == "WY" |  LEA_STATE == "ID" |                              LEA_STATE == "MT" ~ "Rocky Mountains",
+                            LEA_STATE == "SD" | LEA_STATE == "ND" | LEA_STATE == "NE" | LEA_STATE == "KS" | LEA_STATE == "MN" |                               LEA_STATE == "IA" | LEA_STATE == "MO" | LEA_STATE == "WI" | LEA_STATE == "IL" | LEA_STATE == "MI" |                               LEA_STATE == "IN" | LEA_STATE == "OH" ~ "Midwest",
+                            LEA_STATE == "PA" | LEA_STATE == "NJ" | LEA_STATE == "NY" | LEA_STATE == "CT" | LEA_STATE == "RI" |                               LEA_STATE == "MA" | LEA_STATE == "VT" | LEA_STATE == "NH" | LEA_STATE == "ME" ~ "Northeast",
+                            LEA_STATE == "LA" | LEA_STATE == "AR" | LEA_STATE == "MS" | LEA_STATE == "AL" | LEA_STATE == "TN" |                               LEA_STATE == "KY" | LEA_STATE == "WV" | LEA_STATE == "DE" | LEA_STATE == "MD" | LEA_STATE == "DC" |                               LEA_STATE == "VA" | LEA_STATE == "NC" | LEA_STATE == "SC" | LEA_STATE == "GA" | LEA_STATE == "FL"                                 ~ "Southeast"))  
+    
+```
+
+# Save this data frame to csv in the box with write_csv
+
+
+

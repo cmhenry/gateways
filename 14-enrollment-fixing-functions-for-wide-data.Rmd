@@ -1,0 +1,57 @@
+---
+title: "14-enrollment-fixing-functions-for-wide-data"
+output: html_notebook
+---
+
+The purpose of this notebook is to create functions to make the enrollment variable useable for the wide data format. 
+
+# Load required packages
+
+
+```{r, purl = FALSE}
+#Load required packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, assertr)
+```
+
+
+#Load in the data
+
+Our data is in the feather format so we can load it in below with read feather
+
+```{r, purl = FALSE}
+#Load in the data
+ocr_15_wide <- read_feather("data/OCR-transformed/ocr_15_wide.feather")
+```
+
+# Function to turn anomolies into NA values
+
+The function below should be used on the ocr_15_wide data frame. The function will reorginized the data frame to make sure all of the columns containing character data are at the front of the data frame and all of the columns with numeric data are at the end of the data frame. The function will then convert all of the negative enrollment values to NA at the request of the stakeholders. 
+
+```{r}
+# Create a function to make the enrollment variables usable in the wide data
+
+enrollment_fix_wide <- function(df) {
+  # get index of Enrollment columns
+  enr_ii <- grep('ENR', colnames(df))
+  
+  # Convert negative enrollments to 0
+  df[,enr_ii][df[,enr_ii] < 0] <- 0
+  
+  # Return data frame with zeroed out enrollments
+  return(df)
+}
+```
+
+Now we have a function called enrollment_fix_wide() that will take the enrollment data in the wide format and fix it to make it more usable for us. This function should only be used on the ocr_15_wide data frame. If it needs to be used on anything else it should be changed accordingly.
+
+# Test the function
+
+```{r, purl = FALSE}
+# Run the function on the wide data to remove negative enrollments.
+ocr_15_wide <- enrollment_fix_wide(ocr_15_wide)
+```
+
+After running the code above we have a much more usable version of the wide data frame where there are no negative enrollment numbers.
+
+

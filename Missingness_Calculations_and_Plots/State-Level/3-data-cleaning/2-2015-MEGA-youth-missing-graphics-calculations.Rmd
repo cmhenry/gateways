@@ -1,0 +1,273 @@
+---
+title: "27-MEGATABLE-youth-missing-graphics-calculations"
+output: html_notebook
+---
+
+The purpose of this notebook is to create a data frame that we can use to plot the youth missing graphics for all demographics in the Shiny app from Figures 16-22 on Pages 115-118 of the Access Denied Report.We will call the final data frame "full_missing_plots_df"
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2)
+```
+
+# Create 2015 df for AIAN
+
+```{r}
+# Add total missing percentage for plotly to print out
+AM_2015 <- AM_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+AM_2015$year <- 2015
+AM_2015$group <- "AIAN"
+```
+
+# Create 2015 df for Asian
+
+```{r}
+# Add total missing percentage for plotly to print out
+AS_2015 <- AS_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+AS_2015$year <- 2015
+AS_2015$group <- "Asian"
+```
+
+# Create 2015 df for Black
+
+```{r}
+# Add total missing percentage for plotly to print out
+BL_2015 <- BL_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+BL_2015$year <- 2015
+BL_2015$group <- "Black"
+```
+
+# Create 2015 df for Latinx
+
+```{r}
+# Add total missing percentage for plotly to print out
+HI_2015 <- HI_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+HI_2015$year <- 2015
+HI_2015$group <- "Latinx"
+```
+
+# Create 2015 df for NHPI
+
+```{r}
+# Add total missing percentage for plotly to print out
+HP_2015 <- HP_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+HP_2015$year <- 2015
+HP_2015$group <- "NHPI"
+```
+
+# Create 2015 df for TMR
+
+```{r}
+# Add total missing percentage for plotly to print out
+TR_2015 <- TR_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+TR_2015$year <- 2015
+TR_2015$group <- "TMR"
+```
+
+# Create 2015 df for White
+
+```{r}
+# Add total missing percentage for plotly to print out
+WH_2015 <- WH_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+WH_2015$year <- 2015
+WH_2015$group <- "White"
+```
+
+
+# Bind all groups together to get the 2015 data frame
+
+```{r}
+# Stack upper and lower data frames on top of each other to get our final data frame for plotting. 
+full_plot_df_2015 <- rbind(AM_2015, AS_2015, BL_2015, HI_2015, HP_2015, TR_2015, WH_2015)
+```
+
+# Save the full data frame to CSV for easy plotting
+
+```{r}
+write_csv(full_plot_df_2015, "C:/Users/donse/OneDrive/Documents/DSSG/gateways/full_plot_df_2015.csv")
+```
+
+
+#### Create 2017 DF------------------------------------------------------------------------------------------------------------
+
+# Create 2017 df for AIAN
+
+```{r}
+# Add total missing percentage for plotly to print out
+AM_2017 <- AM_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+AM_2017$year <- 2017
+AM_2017$group <- "AIAN"
+```
+
+# Create 2017 df for Asian
+
+```{r}
+# Add total missing percentage for plotly to print out
+AS_2017 <- AS_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+AS_2017$year <- 2017
+AS_2017$group <- "Asian"
+```
+
+# Create 2017 df for Black
+
+```{r}
+# Add total missing percentage for plotly to print out
+BL_2017 <- BL_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+BL_2017$year <- 2017
+BL_2017$group <- "Black"
+```
+
+# Create 2017 df for Latinx
+
+```{r}
+# Add total missing percentage for plotly to print out
+HI_2017 <- HI_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+HI_2017$year <- 2017
+HI_2017$group <- "Latinx"
+```
+
+# Create 2017 df for NHPI
+
+```{r}
+# Add total missing percentage for plotly to print out
+HP_2017 <- HP_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+HP_2017$year <- 2017
+HP_2017$group <- "NHPI"
+```
+
+# Create 2017 df for TMR
+
+```{r}
+# Add total missing percentage for plotly to print out
+TR_2017 <- TR_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+TR_2017$year <- 2017
+TR_2017$group <- "TMR"
+```
+
+# Create 2017 df for White
+
+```{r}
+# Add total missing percentage for plotly to print out
+WH_2017 <- WH_missing_plot_df %>%
+  group_by(LEA_STATE) %>%
+  mutate(total_missing_perc = sum(percent_missing)) %>%
+  ungroup()
+```
+
+```{r}
+# Add on vairables for year and group
+WH_2017$year <- 2017
+WH_2017$group <- "White"
+```
+
+
+# Bind all groups together to get the 2015 data frame
+
+```{r}
+# Stack upper and lower data frames on top of each other to get our final data frame for plotting. 
+full_plot_df_2017 <- rbind(AM_2017, AS_2017, BL_2017, HI_2017, HP_2017, TR_2017, WH_2017)
+```
+
+# Combine 2015 and 2017 data frame -----------------------------------------------------------------------------------------
+
+```{r}
+#Combine to form final plotting data frame
+full_missing_plots_df <- rbind(full_plot_df_2015, full_plot_df_2017)
+```
+
+# Save the plot to CSV in box with write_csv
+
+

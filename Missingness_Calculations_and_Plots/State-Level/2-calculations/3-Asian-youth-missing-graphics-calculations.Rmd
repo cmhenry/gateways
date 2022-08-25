@@ -1,0 +1,154 @@
+---
+title: "27-Asian-youth-missing-graphics-calculations"
+output: html_notebook
+---
+
+The purpose of this notebook is to create a data frame that we can use to plot the Asian youth missing graphic from Figures 16-22 on Pages 115-118 of the Access Denied Report.We will call the final data frame "AS_missing_plot_df."
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr, readr, assertr, ggplot2)
+```
+
+Now we can use the original wide data to calculate the missing percentages for different demographic groups and then tack those calculations on to the original data frame "state_missing_totals_df" that we created in the 27-youth-missing-graphics-calculations RMD file.
+
+### Asian
+
+We will use the following code to find percent missingness in Asian students
+
+```{r}
+# Get percent of students in GT in each state
+AS_state_totals_perc <- ocr_17_wide %>%
+  group_by(LEA_STATE) %>%
+  summarise(tot_AS_enr = (sum(SCH_ENR_AS_M,na.rm = TRUE) + sum(SCH_ENR_AS_F,na.rm = TRUE)), tot_AS_gt_enr = (sum(SCH_GTENR_AS_M,na.rm = TRUE) + sum(SCH_GTENR_AS_F,na.rm = TRUE)), state_AS_perc_gt = (sum(SCH_GTENR_AS_M,na.rm = TRUE) + sum(SCH_GTENR_AS_F,na.rm = TRUE))/(sum(SCH_ENR_AS_M,na.rm = TRUE) + sum(SCH_ENR_AS_F,na.rm = TRUE))) %>%
+  ungroup()
+```
+
+```{r}
+# Add percent of students in GT in each state to main DF
+AS_missing_df <- state_missing_totals_df %>%
+  left_join(AS_state_totals_perc, by = c("LEA_STATE" = "LEA_STATE"))
+```
+
+Now we need to break down to populations by students who are in schools that offer GT programs and schools that do not offer GT programs
+
+```{r}
+# Find the total number of students in schools that do not offer GT services
+AS_enrollment_no_gt_df <- ocr_17_wide %>%
+  filter(SCH_GT_IND == "No") %>%
+  group_by(LEA_STATE) %>%
+  summarise(tot_AS_enr_no_gt = (sum(SCH_ENR_AS_M,na.rm = TRUE) + sum(SCH_ENR_AS_F,na.rm = TRUE))) %>%
+  ungroup()
+  
+```
+
+```{r}
+# Find the total number of students in schools that offer GT services
+AS_enrollment_w_gt_df <- ocr_17_wide %>%
+  filter(SCH_GT_IND == "Yes") %>%
+  group_by(LEA_STATE) %>%
+  summarise(tot_AS_enr_w_gt = sum(SCH_ENR_AS_M,na.rm = TRUE) + sum(SCH_ENR_AS_F,na.rm = TRUE)) %>%
+  ungroup()
+```
+
+```{r}
+# Add number of students from schools with different service types to full DF
+AS_missing_df <- AS_missing_df %>%
+  left_join(AS_enrollment_no_gt_df, by = c("LEA_STATE" = "LEA_STATE")) %>%
+  left_join(AS_enrollment_w_gt_df, by = c("LEA_STATE" = "LEA_STATE"))
+
+```
+
+Now our data frame has all the columns we need to calculate the number of missing AM students from gt programs.
+
+```{r}
+#Find number of students missing from schools that do not offer gifted education
+AS_missing_df <- AS_missing_df %>%
+  mutate(AS_missing_no_GT_lower = round(tot_AS_enr_no_gt * state_perc_gt), AS_missing_no_GT_upper = round(tot_AS_enr_no_gt * state_nonT1_perc_gt))
+```
+
+```{r}
+#Find number of underrepresented students from gifted education
+AS_missing_df <- AS_missing_df %>%
+  mutate(AS_missing_underrep_lower = (round((tot_AS_enr_w_gt * state_perc_gt)) - tot_AS_gt_enr), AS_missing_underrep_upper = (round(tot_AS_enr_w_gt * state_nonT1_perc_gt) - tot_AS_gt_enr))
+```
+
+Some under representation values become negative if there is a higher percentage of students in gifted education from that demographic than the percentage of gifted education in the state. We do not consider overrepresentation to be a problem so we will change the negative under representation values to zeros. 
+
+```{r}
+#Change negative under representation values to zeros
+ AS_missing_df[,15:16][AS_missing_df[,15:16] < 0] <- 0
+```
+
+Now we can calculate the upper and lower bounds of the missingness percentages. 
+
+```{r}
+# calculate the upper and lower bounds of the missingness percentages.
+AS_missing_df <- AS_missing_df %>%
+  mutate(AS_perc_missing_lower = ((AS_missing_no_GT_lower + AS_missing_underrep_lower)/(tot_AS_gt_enr + AS_missing_no_GT_lower + AS_missing_underrep_lower)), AS_perc_missing_upper = ((AS_missing_no_GT_upper + AS_missing_underrep_upper)/(tot_AS_gt_enr + AS_missing_no_GT_upper + AS_missing_underrep_upper)))
+```
+
+Now we have all the missing percentages calculated we need to do a bit of cleaning before we can plot this data
+
+```{r}
+# Select only the columns we want to plot infromation from
+AS_plot_fix <- AS_missing_df %>%
+  select(LEA_STATE, AS_perc_missing_lower, AS_perc_missing_upper)
+```
+
+```{r}
+# Find states where lower bound is greater than the upper bound
+AS_plot_fix %>%
+  filter(AS_perc_missing_lower > AS_perc_missing_upper)
+```
+
+In these states we will flip the upper and lower bound to plot the bars and and I will make a note of this in the report. 
+
+```{r}
+#Remove NA values from Alabama, a state that does not report on title1 status which resulted in NA values in the calculations
+#Because Alabama does not report on Title1 statues we used the overall percentage for both values
+#AS_plot_fix[2,3] <- AS_plot_fix[2,2]
+
+#Change missingness percentage to 100 in states that have no gifted representation at all
+AS_plot_fix[8,2:3] <- 1
+AS_plot_fix[40,2:3] <- 1
+```
+
+```{r}
+# Add the upperboundry and the lower boundry to the data frame and make sure the missing percentage mins and maxs are the upper and lower boundries
+AS_plot_fix <- AS_plot_fix %>%
+  mutate(upperbound_add_on = abs(AS_perc_missing_upper - AS_perc_missing_lower))%>%
+  rowwise()%>%
+  mutate(bottom_bar = min(AS_perc_missing_upper, AS_perc_missing_lower), top_bar = max(AS_perc_missing_upper, AS_perc_missing_lower))
+```
+
+```{r}
+# Create a df with only the values we need to plot the lower bounds
+AS_lower_plot_df <- AS_plot_fix %>%
+  select(LEA_STATE, bottom_bar)
+
+AS_lower_plot_df$bound <- "Lower Bound"
+
+colnames(AS_lower_plot_df) <- c("LEA_STATE", "percent_missing", "bound")
+```
+
+```{r}
+# Create a df with only the values needed to plot the upper bounds
+AS_upper_plot_df <- AS_plot_fix %>%
+  select(LEA_STATE, upperbound_add_on)
+
+AS_upper_plot_df$bound <- "Upper Bound"
+
+colnames(AS_upper_plot_df) <- c("LEA_STATE", "percent_missing", "bound")
+```
+
+```{r}
+# Stack upper and lower data frames on top of each other to get our final data frame for plotting. 
+AS_missing_plot_df <- rbind(AS_upper_plot_df, AS_lower_plot_df)
+```
+
+We created a data frame with just the lower and the upper boundry for percent missing in each state. This will make it easier for use to plot the data in ggplot in a way that matches the graphics from the access denied report. Our data frame is ready and we can now plot it in the rmd file 26-youth-missing-graphics.
+
+

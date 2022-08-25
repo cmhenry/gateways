@@ -1,0 +1,228 @@
+---
+title: "29-access-and-equity-data-function"
+author: "Mafe Senosain"
+date: "7/23/2021"
+output: html_document
+---
+
+# Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,vroom,stringr,arrow,testit,feather)
+```
+
+# Import subpop functions
+```{r}
+source(knitr::purl("12-subpopulation_function.Rmd", output = tempfile()))
+```
+
+# Define function
+```{r}
+access_equity_gentable <- function(ocr_wide_feather_path, type = c('NATION', 'REGION', 'STATE', 'COUNTY')){
+  
+  # Read file
+  ocr_wide = arrow::read_feather(file = ocr_wide_feather_path)
+  
+  if(type=='REGION'){
+    # append region column
+    regions <- read.csv('data/regions.csv')
+    ocr_wide <- left_join(ocr_wide, regions, "LEA_STATE")
+    # create new column for convenience
+    ocr_wide$v <- ocr_wide$REGION
+  }
+  
+  if(type=='STATE'){
+    # create new column for convenience
+    ocr_wide$v <- ocr_wide$LEA_STATE
+  }
+
+  if(type=='COUNTY'){
+    # create new column for convenience
+    ocr_wide$v <- paste0(ocr_wide$LEA_STATE, '_', ocr_wide$NMCNTY)
+  }
+  
+  if(type!='NATION'){
+    # Aggregate numbers using group_by by state and SCH_GT_IND
+    df_v_nolocale <- subpopulation_gentable(ocr_wide, groupby_colnames = c('v','TITLEI', 'SCH_GT_IND'))
+    df_v_nolocale_notitle <- subpopulation_gentable(ocr_wide, groupby_colnames = c('v', 'SCH_GT_IND'))
+    
+    # Generate a vector with region/state/county names
+    vs <- unique(df_v_nolocale_notitle$v)
+    if('PR' %in% vs) {
+      vs <- vs[-which(vs =='PR')]
+    }
+    # Generate an empty df to store new data
+    df_gm <- data.frame(matrix(NA, nrow = length(vs), 0))
+    # Iterate through states to compute access ratio per race
+    for (i in 1:length(vs)){
+      # get a subset df for a specific state
+      df <- df_v_nolocale[df_v_nolocale$v == vs[i],]
+      df_notitle <- df_v_nolocale_notitle[df_v_nolocale_notitle$v == vs[i],]
+      
+      # get the index for SCH_GT_IND == 'Yes'
+      sch_yes_ii <- which(df$SCH_GT_IND == 'Yes')
+      
+      # get the index for TITLEI == 'Yes'
+      t1_yes_ii <- which(df$TITLEI == 'Yes')
+      
+      # get the index for TITLEI == 'No'
+      t1_no_ii <- which(df$TITLEI == 'No')
+      
+      # REP_INDEX cols index
+      repidx_ii <- grep('REP_INDEX', colnames(df))
+      
+      # GTACCESS cols index
+      gtacc_ii <- grep('GTACCESS', colnames(df))
+      
+      # If state has no gifted
+      gifted_v <- "Yes" %in% df$SCH_GT_IND
+      # If state has no title
+      title_v <- "Yes" %in% df$TITLEI
+      gtyes_t1no = which(df$SCH_GT_IND == 'Yes' & df$TITLEI == 'No')
+      gtyes_t1yes = which(df$SCH_GT_IND == 'Yes' & df$TITLEI == 'Yes')
+      
+      # Create new cols
+      df_gm[i,'v'] <- vs[i]
+      if(gifted_v){
+        df_gm[i, 'PERCENT_GT_ACCESS'] <- 100*sum(df$TOT_ENR[sch_yes_ii])/sum(df$TOT_ENR)
+        df_gm[i, 'PERCENT_GTID'] <- 100*sum(df$TOT_GTENR[sch_yes_ii])/sum(df$TOT_ENR[sch_yes_ii])
+        df_gm[i, 'PERCENT_GTID_NONT1'] <- 100*sum(df$TOT_GTENR[which(df$SCH_GT_IND == 'Yes' & df$TITLEI == 'No')])/sum(df$TOT_ENR[t1_no_ii])
+        df_gm[i, 'PERCENT_GTID_T1'] <- 100*sum(df$TOT_GTENR[which(df$SCH_GT_IND == 'Yes' & df$TITLEI == 'Yes')])/sum(df$TOT_ENR[t1_yes_ii])
+        df_gm[i, 'EQT_RATIO_GTID_T1NONT1'] <- df_gm[i, 'PERCENT_GTID_T1']/df_gm[i, 'PERCENT_GTID_NONT1']
+        
+        for(race in repidx_ii){
+          df_gm[i, paste0(colnames(df)[race],'_OVERALL')] <- df_notitle[which(df_notitle$SCH_GT_IND=='Yes'), race-1]
+          if(title_v){
+            if(length(gtyes_t1no)>0){
+              df_gm[i, paste0(colnames(df)[race],'_NONT1')] <- df[gtyes_t1no, race]
+            }
+            if(length(gtyes_t1yes)>0) {
+              df_gm[i, paste0(colnames(df)[race],'_T1')] <- df[gtyes_t1yes, race]
+            }
+          }
+        }
+        
+        for(race in gtacc_ii){
+          df_gm[i, paste0(colnames(df)[race],'_OVERALL')] <- df_notitle[which(df_notitle$SCH_GT_IND=='Yes'), race-1]*100
+          if(title_v){
+            if(length(gtyes_t1no)>0){
+              df_gm[i, paste0(colnames(df)[race],'_NONT1')] <- df[gtyes_t1no, race]*100
+            }
+            if(length(gtyes_t1yes)>0) {
+              df_gm[i, paste0(colnames(df)[race],'_T1')] <- df[gtyes_t1yes, race]*100
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  if(type=='NATION'){
+      # Aggregate numbers using group_by by state and SCH_GT_IND
+    df_v_nolocale <- subpopulation_gentable(ocr_wide, groupby_colnames = c('TITLEI', 'SCH_GT_IND'))
+    df_v_nolocale_notitle <- subpopulation_gentable(ocr_wide, groupby_colnames = c('SCH_GT_IND'))
+    
+    # Generate an empty df to store new data
+    df_gm <- data.frame(matrix(NA, 1, 0))
+    # get a subset df for a specific state
+    df <- df_v_nolocale
+    df_notitle <- df_v_nolocale_notitle
+    
+    # get the index for SCH_GT_IND == 'Yes'
+    sch_yes_ii <- which(df$SCH_GT_IND == 'Yes')
+    
+    # get the index for TITLEI == 'Yes'
+    t1_yes_ii <- which(df$TITLEI == 'Yes')
+    
+    # get the index for TITLEI == 'No'
+    t1_no_ii <- which(df$TITLEI == 'No')
+    
+    # REP_INDEX cols index
+    repidx_ii <- grep('REP_INDEX', colnames(df))
+    # GTACCESS cols index
+    gtacc_ii <- grep('GTACCESS', colnames(df))
+    
+    # If state has no gifted
+    gifted_v <- "Yes" %in% df$SCH_GT_IND
+    # If state has no title
+    title_v <- "Yes" %in% df$TITLEI
+    gtyes_t1no = which(df$SCH_GT_IND == 'Yes' & df$TITLEI == 'No')
+    gtyes_t1yes = which(df$SCH_GT_IND == 'Yes' & df$TITLEI == 'Yes')
+      
+    df_gm[1,'PERCENT_GT_ACCESS'] <- 100*sum(df$TOT_ENR[sch_yes_ii])/sum(df$TOT_ENR)
+    df_gm[1,'PERCENT_GTID'] <- 100*sum(df$TOT_GTENR[sch_yes_ii])/sum(df$TOT_ENR[sch_yes_ii])
+    df_gm[1,'PERCENT_GTID_NONT1'] <- 100*sum(df$TOT_GTENR[which(df$SCH_GT_IND == 'Yes' & df$TITLEI == 'No')])/sum(df$TOT_ENR[t1_no_ii])
+    df_gm[1,'PERCENT_GTID_T1'] <- 100*sum(df$TOT_GTENR[which(df$SCH_GT_IND == 'Yes' & df$TITLEI == 'Yes')])/sum(df$TOT_ENR[t1_yes_ii])
+    df_gm[1,'EQT_RATIO_GTID_T1NONT1'] <- df_gm[1, 'PERCENT_GTID_T1']/df_gm[1, 'PERCENT_GTID_NONT1']
+        
+    for(race in repidx_ii){
+      df_gm[1, paste0(colnames(df)[race],'_OVERALL')] <- df_notitle[which(df_notitle$SCH_GT_IND=='Yes'), race-1]
+      if(title_v){
+        if(length(gtyes_t1no)>0){
+          df_gm[1, paste0(colnames(df)[race],'_NONT1')] <- df[gtyes_t1no, race]
+        }
+        if(length(gtyes_t1yes)>0) {
+          df_gm[1, paste0(colnames(df)[race],'_T1')] <- df[gtyes_t1yes, race]
+        }
+      }
+    }
+    
+    for(race in gtacc_ii){
+      df_gm[1, paste0(colnames(df)[race],'_OVERALL')] <- df_notitle[which(df_notitle$SCH_GT_IND=='Yes'), race-1]*100
+      if(title_v){
+        if(length(gtyes_t1no)>0){
+          df_gm[1, paste0(colnames(df)[race],'_NONT1')] <- df[gtyes_t1no, race]*100
+        }
+        if(length(gtyes_t1yes)>0) {
+          df_gm[1, paste0(colnames(df)[race],'_T1')] <- df[gtyes_t1yes, race]*100
+        }
+      }
+    }
+    
+  }
+  
+  if(type=='COUNTY'){
+    df_gm <- cbind('STATE'= sapply(strsplit(df_gm$v, "_"), "[[", 1), df_gm)
+    df_gm$v <- sapply(strsplit(df_gm$v, "_"), "[[", 2)
+  }
+  
+  # Add column name by type
+  colnames(df_gm)[which(colnames(df_gm) =='v')] <- type
+  
+  return(df_gm)
+  
+}
+```
+
+# Run function
+```{r, purl = FALSE}
+
+nation_access_equity_2015 <- access_equity_gentable(ocr_wide_feather_path = 'data/OCR-transformed/2015/ocr_2015_wide.feather', type = 'NATION')
+region_access_equity_2015 <- access_equity_gentable(ocr_wide_feather_path = 'data/OCR-transformed/2015/ocr_2015_wide.feather', type = 'REGION')
+state_access_equity_2015 <- access_equity_gentable(ocr_wide_feather_path = 'data/OCR-transformed/2015/ocr_2015_wide.feather', type = 'STATE')
+county_access_equity_2015 <- access_equity_gentable(ocr_wide_feather_path = 'data/OCR-transformed/2015/ocr_2015_wide.feather', type = 'COUNTY')
+
+nation_access_equity_2017 <- access_equity_gentable(ocr_wide_feather_path = 'data/OCR-transformed/2017/ocr_2017_wide.feather', type = 'NATION')
+region_access_equity_2017 <- access_equity_gentable(ocr_wide_feather_path = 'data/OCR-transformed/2017/ocr_2017_wide.feather', type = 'REGION')
+state_access_equity_2017 <- access_equity_gentable(ocr_wide_feather_path = 'data/OCR-transformed/2017/ocr_2017_wide.feather', type = 'STATE')
+county_access_equity_2017 <- access_equity_gentable(ocr_wide_feather_path = 'data/OCR-transformed/2017/ocr_2017_wide.feather', type = 'COUNTY')
+```
+
+# Save data
+```{r}
+save(
+     nation_access_equity_2015, 
+     region_access_equity_2015, 
+     state_access_equity_2015, 
+     county_access_equity_2015, 
+     file = 'data/access_equity_data/access_equity_2015.RData')
+
+save(
+     nation_access_equity_2017, 
+     region_access_equity_2017, 
+     state_access_equity_2017, 
+     county_access_equity_2017, 
+     file = 'data/access_equity_data/access_equity_2017.RData')
+```
+

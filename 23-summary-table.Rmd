@@ -1,0 +1,1021 @@
+---
+title: "23-state-summary-table"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,tidyr,arrow,leaflet,maps,ggplot2,ggrepel,usmap,usdata,feather,tigris,leaflet,sf,shiny,DT)
+source(knitr::purl('14-enrollment-fixing-functions-for-wide-data.Rmd'))
+source(knitr::purl('12-subpopulation_function.Rmd'))
+```
+
+```{r}
+df_ocr_LOOK <- arrow::read_feather("data/OCR-transformed/2015/ocr_2015_lookup.feather")
+df_ocr_wide <- arrow::read_feather("data/OCR-transformed/2015/ocr_2015_wide.feather")
+df_ocr_wide <- enrollment_fix_wide(df_ocr_wide)
+```
+
+```{r}
+# By state
+df_ocr <- subpopulation_gentable(df_ocr_wide, groupby_colnames = c('LEA_STATE'))
+df_TITLEI<-subpopulation_gentable(df_ocr_wide, groupby_colnames = c('LEA_STATE', 'TITLEI'))
+
+```
+
+```{r}
+# Generate a vector with state names
+states <- unique(df_ocr$LEA_STATE)
+# Generate an empty df to store new data
+df_AR <- as.data.frame(matrix(NA, nrow = length(states), 0))
+ # Iterate through states to comput access ratio per race
+for (i in 1:length(states)){
+   df_state_TITLEI<- df_TITLEI[df_TITLEI$LEA_STATE == states[i],]
+   # get a subset df for a specific state
+   df_state <- df_ocr[df_ocr$LEA_STATE == states[i],]
+   # get the index for TITLEI == 'Yes'
+   titleI <- which(df_state_TITLEI$TITLEI== 'Yes')
+   # get the index for TITLEI == 'No'
+   nontitleI <- which(df_state_TITLEI$TITLEI== 'No')
+
+   df_AR[i,'LEA_STATE'] <- states[i]
+   if(states[i]!='DC' & states[i]!='AL'){
+   df_AR[i,'Hispnic Overall Representation Index'] = df_state$HI_REP_INDEX
+   df_AR[i,'Hispanic TitleI Representation Index'] = df_state_TITLEI$HI_REP_INDEX[titleI]
+   df_AR[i,'Hispanic Non-TitleI Representation Index'] = df_state_TITLEI$HI_REP_INDEX[nontitleI]
+   df_AR[i,'AIAN Overall Representation Index'] = df_state$AM_REP_INDEX
+   df_AR[i,'AIAN TitleI Representation Index'] = df_state_TITLEI$AM_REP_INDEX[titleI]
+   df_AR[i,'AIAN Non-TitleI Representation Index'] = df_state_TITLEI$AM_REP_INDEX[nontitleI]
+   df_AR[i,'NHPI Overall Representation Index'] = df_state$HP_REP_INDEX
+   df_AR[i,'NHPI TitleI Representation Index'] = df_state_TITLEI$HP_REP_INDEX[titleI]
+   df_AR[i,'NHPI Non-TitleI Representation Index'] = df_state_TITLEI$HP_REP_INDEX[nontitleI]
+    df_AR[i,'Black Overall Representation Index'] = df_state$BL_REP_INDEX
+   df_AR[i,'Black TitleI Representation Index'] = df_state_TITLEI$BL_REP_INDEX[titleI]
+   df_AR[i,'Black Non-TitleI Representation Index'] = df_state_TITLEI$BL_REP_INDEX[nontitleI]
+   }
+}
+```
+```{r}
+df_long <- gather(df_AR, Categories, "Representation Index", 'Hispnic Overall Representation Index':'Black Non-TitleI Representation Index', factor_key=TRUE)
+
+```
+
+```{r}
+
+AL <- fluidPage(h2(strong("Alabama")),h4('The state of Alabama mandates by law identifying and serving “intellectually gifted children.” This mandate is partially funded. Students Missing from Gifted Education Identification: 35% at the Lower Boundary. Grade: Fail. Rank: 23Alabama identified 51,695 students as gifted in 2016. Statewide, the numberof missing students in schools that do not identify and in schools that under identify ranges from 28,237 to 43,746, (35% to 46%) with most of these missing students coming from Title I schools and from underserved populations. For example, 8,320 Black children are identified, with 14,917 to 23,506 (64% to 74%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsWith a mandate for identification, only 75% of students attend schools whereidentification occurs. Disparity exists between Title I and Non-Title I school identification rates, and Black and Latinx children are under identified, averaging RIs well below 1.00 of 0.49 and 0.54, respectively. Alabama has better equity for AIAN students than do most other states. But given the underrepresentation of Black and Latinx youth in Title I and Non-Title I schools and in all locales, Alabama needs to reform policy and procedures to address issues of equity and access in its gifted programming.')
+)
+               
+```
+
+```{r}
+df_AK<- df_long[df_long$LEA_STATE == 'AK',]
+rownames(df_AK) <- NULL
+df_AK <- df_AK[, c(2,3)]
+
+
+AK<- fluidPage(h2(strong("Alaska")),DT::dataTableOutput("df_AK"), h4("The state of Alaska mandates by law identifying, but not serving, “gifted children.” This mandate is not funded. Students Missing From Gifted Education Identification: 36% at the Lower Boundary. Grade: Fail. Rank: 24Alaska identified 6,397 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 3,534 to 4,475, (36% to 41%) with most of these missing students coming from Title I schools and from underserved populations. For example, 241 AIAN children are identified, with 1,873 to 2,230 (89-90%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and Recommendations Despite a mandate requiring identification of youth with gifts and talents, only about 70% of Alaska’s youth attend schools that do so. And 50% fewer AIAN youth attend these schools than do students from other races. Additionally, fewer students are identified in Title I than in Non-Title I schools.Together these circumstances result in severe underrepresentation of AIAN youth in Alaska. This is especially egregious, as Alaska has the largest proportion of AIAN youth, but serves the smallest proportion as gifted—only one in ten. Few AIAN youth even attend schools that identify students with gifts and talents, and when they do they are underrepresented. Black, Latinx, and NHPI students are also woefully underrepresented in Alaska. Clearly, reform is needed in Alaska concerning access to and equity in gifted education. Policy, practices, and identification procedures need review and revision."))
+
+```
+
+
+```{r}
+df_AZ<- df_long[df_long$LEA_STATE == 'AZ',]
+rownames(df_AZ) <- NULL
+df_AZ <- df_AZ[, c(2,3)]
+
+
+AZ<- fluidPage(h2(strong("Arizona")),DT::dataTableOutput("df_AZ"), h4("The state of Arizona mandates by law identifying and serving “gifted pupils.” This mandate is not funded. Students Missing From Gifted Education Identification: 35%% at the Lower Boundary. Grade: Fail. Rank: 32Arizona identified 53,066 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 28,808 to 42,230, (35% to 44%) with most of these missing students coming from schools that do not identify and from underserved populations. For example, 941 AIAN children are identified, with2,161 to 3,038 (70% to 76%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsArizona has a mandate to identify youth with gifts and talents, yet only 63% of youth attend a school where this takes place. More Title I schools in Arizona identify students with gifts and talents, and they identify larger percentages of their students with gifts and talents than do Non-Title I schools. However, despite these circumstances, underrepresentation exists for AIAN, Black, and Latinx youth. Reform is warranted with respect to access, equity, policy, procedures, and how students are identified. AIAN youth are missing due to lack of access, and they are underrepresented in schools where identification takes place."))
+
+```
+
+```{r}
+df_AR<- df_long[df_long$LEA_STATE == 'AR',]
+rownames(df_AR) <- NULL
+df_AR <- df_AR[, c(2,3)]
+
+
+AR<- fluidPage(h2(strong("Arkansas")),DT::dataTableOutput("df_AR"), h4("The state of Arkansas mandates by law identifying and serving “gifted and talented children and youth.” This mandate is partially funded. Students Missing From Gifted Education Identification: 18% at the Lower Boundary. Grade: Pass. Rank: 4Arkansas identified 46,172 students as gifted in 2016. Statewide, the numberof missing students in schools that do not identify and in schools that underidentify ranges from 10,423 to 12,825, (18% to 22%) with most of these missing students coming from underserved populations.For example, 3,229 Latinx children were identified, with 3,186 to 3,874 (50% to 55%) missing. These numbers are detailed in the table above and in the accompanyingstate report.Key Findings and RecommendationsMost students (88.55%) who attend school in Arkansas have equitable access to identification, and little disparity exists between the percentage of students identified in Title I and Non-Title I schools (0.90). Yet, AIAN studentswith an RI of 0.69, Black students with an average RI of 0.82, Latinx studentswith an average RI 0.58, and NHPI with an average RI of 0.27 remain underrepresented as gifted in this state. Policy and practice reform is neededto address these issues of inequity. Because underrepresentation and missingness in Arkansas is largely not a function of access, identification procedures need to be examined."))
+
+```
+
+```{r}
+df_CA<- df_long[df_long$LEA_STATE == 'CA',]
+rownames(df_CA) <- NULL
+df_CA <- df_CA[, c(2,3)]
+
+
+CA<- fluidPage(h2(strong("California")),DT::dataTableOutput("df_CA"), h4("The state of Arkansas mandates by law identifying and serving “gifted and talented children and youth.” This mandate is partially funded. Students Missing From Gifted Education Identification: 18% at the Lower Boundary. Grade: Pass. Rank: 4Arkansas identified 46,172 students as gifted in 2016. Statewide, the numberof missing students in schools that do not identify and in schools that underidentify ranges from 10,423 to 12,825, (18% to 22%) with most of these missing students coming from underserved populations.For example, 3,229 Latinx children were identified, with 3,186 to 3,874 (50% to 55%) missing. These numbers are detailed in the table above and in the accompanyingstate report.Key Findings and RecommendationsMost students (88.55%) who attend school in Arkansas have equitable access to identification, and little disparity exists between the percentage of students identified in Title I and Non-Title I schools (0.90). Yet, AIAN studentswith an RI of 0.69, Black students with an average RI of 0.82, Latinx studentswith an average RI 0.58, and NHPI with an average RI of 0.27 remain underrepresented as gifted in this state. Policy and practice reform is neededto address these issues of inequity. Because underrepresentation and missingness in Arkansas is largely not a function of access, identification procedures need to be examined."))
+
+```
+
+```{r}
+df_CA<- df_long[df_long$LEA_STATE == 'CA',]
+rownames(df_CA) <- NULL
+df_CA <- df_CA[, c(2,3)]
+
+
+CA<- fluidPage(h2(strong("California")),DT::dataTableOutput("df_CA"), h4("The state of California does not mandate identifying or serving gifted students.There is no funding for gifted programs. Students Missing From Gifted Education Identification: 39% at the Lower Boundary. Grade: Fail. Rank: 29California identified 424,890 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 274,119 to 401,139, (39% to 49%) with most of these missing students coming from Title I schools, schools thatdo not identify, and from underserved populations. For example, 14,676 Black children are identified, with 21,797 to 31,704 (60% to 68%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsCalifornia has steadily declined in access to identification since 2000 to its present level of 68% of students attending a school where students are identified with gifts and talents. Additional inequities exist between Title I and Non-Title I schools, with Title I schools identifying 31% fewer students.Proportionally fewer AIAN students attend schools where identification takes place than students from other racial groups, so together with Black and Latinx students they are underrepresented. Reform is needed in California regarding policy and procedures, leadership, and guidance to ensure access and equity to gifted education services for all children in California."))
+
+```
+
+```{r}
+df_CO<- df_long[df_long$LEA_STATE == 'CO',]
+rownames(df_CO) <- NULL
+df_CO <- df_CO[, c(2,3)]
+
+
+CO<- fluidPage(h2(strong("Colorado")),DT::dataTableOutput("df_CO"), h4("The state of Colorado mandates by law identifying and serving “gifted children.” This mandate is partially funded. Students Missing From Gifted Education Identification: 20% at the Lower Boundary. Grade: Pass. Rank: 7Colorado identified 69,067 students as gifted in 2016. Statewide, the numberof missing students in schools that do not identify and in schools that underidentify ranges from 16,859 to 22,174, (20% to 24%) with most of these missing students coming from Title I schools and from underserved populations. For example, 12,553 Latinx children are identified, with 12,134 to 16,315 (49% to 57%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsColorado ranks third in access to identification nationally with more than 93% of students attending schools that identify, but at the same time has large inequity between identification rates in Title I and Non-Title I schools (0.47). Underrepresentation of AIAN, Black, and Latinx youth exists across both school types and in all locales. Because there is equity of opportunity among races attending schools that identify, other factors are at play concerning underrepresentation of these groups. Thus, these data make it clear that Colorado needs to reform policy and procedures concerning access, equity, and identification in gifted education statewide."))
+
+```
+
+```{r}
+df_CT<- df_long[df_long$LEA_STATE == 'CT',]
+rownames(df_CT) <- NULL
+df_CT <- df_CT[, c(2,3)]
+
+
+CT<- fluidPage(h2(strong("Connecticut")),DT::dataTableOutput("df_CT"), h4("The state of Connecticut has mandated by law identifying, but not serving “gifted and talented students.” This mandate is not funded. Students Missing From Gifted Education Identification: 69% at the Lower Boundary. Grade: Fail. Rank: 40Connecticut identified 11,906 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 26,033 to 35,327, (69% to 75%) with most of these missing students coming from Title I schools, from schools that do not identify, and from underserved populations. For example, 1,332 Latinx children were identified, with 6,964 to 9,448 (84% to 88%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsConnecticut, with a mandate for identifying students with gifts and talents, but no mandate for serving those students, has limited access to gifted programs. This is exacerbated by students attending Title I schools being identified at only 55% the rate of those attending Non-Title I schools. Connecticut is missing between 2 and 3 times more students than it identifies, and the majority of these students disproportionately come from Black and Latinx groups as well as from Title I schools. Clearly policies, procedures, and reforms are needed concerning access and equity for youth with gifts and talents in Connecticut."))
+
+```
+
+```{r}
+df_DE<- df_long[df_long$LEA_STATE == 'DE',]
+rownames(df_DE) <- NULL
+df_DE <- df_DE[, c(2,3)]
+
+
+DE<- fluidPage(h2(strong("Delaware")),DT::dataTableOutput("df_DE"), h4("The state of Delaware mandate identifying and serving “gifted and talented students.” This mandate is not funded. Students Missing From Gifted Education Identification: 69% at the Lower Boundary. Grade: Fail. Rank: 41Delaware identified 3,613 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 8,093 to 11,716, (69% to 76%) with most of these missing students coming from Title I schools and from underserved populations. For example, 312 Latinx children are identified, with 1,418 to 2,101 (82% to 87%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsEven with a mandate for identification and services, currently only about one-third of Delaware’s students attend a school where they have the opportunity to be identified, resulting in a rank of 44th in missingness amongall states. In addition, students attending Title I schools are identified at only 64% the rate of those attending Non-Title I schools, adding to underrepresentation and missing youth. Students who are Black, Latinx and TMR are underidentified. Delaware needs to reform its policies and procedures in gifted education to address issues of access and equity, including reviewing how students are identified."))
+
+```
+
+```{r}
+
+
+DC <- fluidPage(h2(strong("District of Columbia"), h4("The District of Columbia has no mandate or funding for gifted programs.Students Missing From Gifted Education Identification: 100% at the Lower Boundary. Grade: Fail. Rank: 51The District of Columbia identified 0 students as gifted in 2016. Districtwide, the number of missing students in schools that do not identify ranges from 7,880 to 11,083 (100%). These numbers were calculated using the national lower boundary rate of 9.57% and national upper boundary rate of 13.46%. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsIt is a sad commentary that the nation’s capital neither identifies, nor serves,any students with gifts and talents. Clearly policy, legislation, and action are needed to begin to work with the estimated 7,880 to 11,083 youth who attend DC schools. It is especially troublesome given that the majority of students attending DC public schools are Black or Latinx. The lack of identification by a district with these demographics further contributes to theinvisibleness of gifted Black and Brown youth."))
+)
+               
+```
+
+```{r}
+df_FL<- df_long[df_long$LEA_STATE == 'FL',]
+rownames(df_FL) <- NULL
+df_FL <- df_FL[, c(2,3)]
+
+
+FL<- fluidPage(h2(strong("Florida")),DT::dataTableOutput("df_FL"), h4("The state of Florida mandates by law identifying and serving students with “superior intellect.” This mandate is fully funded. Students Missing From Gifted Education Identification: 23% at the Lower Boundary. Grade: Fail. Rank: 11Florida identified 164,884 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 50,020 to 157,125, (23% to 49%) with most of these missing students coming from Title I schools and from underserved populations. For example, 15,264 Black children are identified, with 27,075 to 56,798 (64% to 79%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and Recommendations Although Florida mandates gifted education identification and service, more than 12% of its students attend schools where no students are identified. Further, double the percentage of students are identified in Non-Title I compared to Title I schools. And although Latinx children are better represented in Florida than they are in most other states, underrepresentation of Latinx children exists, with more students estimated missing than identified. Black youth are severely underrepresented in all settings in Florida. Taken together, these findings make it clear that Florida needs to reform its policies and procedures concerning identification and associated practices to improve access and equity in gifted education for all of its children."))
+
+```
+
+```{r}
+df_GA<- df_long[df_long$LEA_STATE == 'GA',]
+rownames(df_GA) <- NULL
+df_GA <- df_GA[, c(2,3)]
+
+
+GA<- fluidPage(h2(strong("Georgia")),DT::dataTableOutput("df_GA"), h4("The state of Georgia mandates by law identifying and serving “gifted students.”This mandate is fully funded. Students Missing From Gifted Education Identification: 23% at the Lower Boundary. Grade: Fail. Rank: 10Georgia identified 189,320 students as gifted in 2016. Statewide, the numberof missing students in schools that do not identify and in schools that underidentify ranges from 56,848 to 125,737, (23% to 40%) with most of these missing students coming from Title I schools and from underserved populations. For example, 34,285 Black children are identified, with 38,969 to 80,004 (53% to 70%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsWith a fully-funded mandate, Georgia is first in access among all states, but in the bottom 10 for equity between percentages of students in Title I and Non-Title I schools who are identified for gifted services. Additional inequity exists for children of color, with low RIs across Title I and Non-Title I schools for Black and Latinx youth. With about 34,000 of nearly 600,000 Black youth identified, compared to 116,000 of about 700,000 White youth or RIs of .50 and 1.47 respectively, White youth are 3 times more likely to be identified with gifts and talents than are Black youth in the state of Georgia. This, considered with the inequity between Title I and Non-Title I schools, clearly indicates that Georgia needs to reform its policies and procedures to addressracial and poverty equity issues in identification and subsequent programming."))
+
+```
+
+
+```{r}
+df_HI<- df_long[df_long$LEA_STATE == 'HI',]
+rownames(df_HI) <- NULL
+df_HI <- df_HI[, c(2,3)]
+
+
+HI<- fluidPage(h2(strong("Hawaii")),DT::dataTableOutput("df_HI"), h4("The state of Hawaii mandates by law identifying and serving “gifted and talented students.” This mandate is partially funded. Students Missing From Gifted Education Identification: 42% at the Lower Boundary. Grade: Fail. Rank: 30Hawaii identified 5,078 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 2,870 to 3,719, (36% to 42%) with most of these missing students coming from schools that do not identify and from underserved populations. For example, 875 NHPI children were identified, with 1,147 to 1,550 (57% to 64%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsDespite a mandate to identify and serve gifted students, only about 64% of students in Hawaii have access to identification, and these students come from disproportionally more Non-Title I schools than they do from Title I schools, meaning that students who live in poverty are less likely to have access to gifted identification. However, for those Title I schools that do identify students with gifts and talents, they do so at a greater rate than their Non-Title I counterparts. Still, underrepresentation of NHPI exists acrossall schools and settings, with similar patterns for Black and Latinx youth. Clearly, Hawaii needs to examine policies and procedures to address access, equity, and identification within their gifted education programming."))
+
+```
+
+
+```{r}
+df_ID<- df_long[df_long$LEA_STATE == 'ID',]
+rownames(df_ID) <- NULL
+df_ID <- df_ID[, c(2,3)]
+
+
+ID<- fluidPage(h2(strong("Idaho")),DT::dataTableOutput("df_ID"), h4("The state of Idaho mandates by law identifying and serving “gifted/talented children.” This mandate is partially funded. Students Missing from Gifted Education Identification: 51% at the Lower Boundary. Grade: Fail. Rank: 36Idaho identified 7,152 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 7,504 to 9,249, (51% to 56%) with most of these missing students coming from Title I schools and from underserved populations. For example, 448 Latinx children are identified, with 1,908 to 2,360 (81% to 84%) missing. These numbers are detailed in the table above and in the accompanying state report. Key Findings and RecommendationsDespite a mandate to identify and serve students with gifts and talents, only slightly more than half of Idaho’s students have access to gifted identification, inequity exists between Non-Title I and Title I schools regarding percentage of students identified, and RIs by race and locale show underrepresentation. Idaho’s largest underserved racial population is Latinx youth, with an overall RI of 0.35 and a range across school types and Localesof 0.20 to 0.68. In addition, AIAN and Black youth are underserved, with only 48 and 33 students identified from these populations. These data make it clear that Idaho needs to reform policy and procedures concerning access, equity, and identification in gifted education, statewide."))
+
+```
+
+```{r}
+df_IL<- df_long[df_long$LEA_STATE == 'IL',]
+rownames(df_IL) <- NULL
+df_IL <- df_IL[, c(2,3)]
+
+
+IL<- fluidPage(h2(strong("Illinois")),DT::dataTableOutput("df_IL"), h4("The state of Illinois mandates by law gifted education, but not identifying or serving, “gifted and talented children and youth.” This mandate is not funded. Students Missing From Gifted Education Identification: 75% at the Lower Boundary. Grade: Fail. Rank: 44Illinois identified 68,929 students as gifted in 2016. Statewide, the number ofmissing students in schools that do not identify and in schools that underidentify ranges from 206,715 to 247,567, (75% to 78%) with most of these missing students coming from Title I schools and from underserved populations. For example, 6,121 Black children were identified, with 40,197 to 48,248 (88% to 89%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsWith an unfunded mandate that does not require identification or services, only 25% of Illinois students have access to identification. This is a sharp decline from 2000, when almost 60% of students attended schools that identified students with gifts and talents. Additional disparity exists among Title I and Non-Title I schools that identify students with Non-Title schools identifying a larger percentage of students with gifts and talents. Black youthare less likely to attend schools that identify and more likely to attend Title I schools where they are even more underidentified than other racial groups (and Title I schools identify fewer children than do Non-Title I schools, as well). Thus, it is clear that Illinois needs reform in equity, access, and identification polices, practice, and procedures in gifted education statewide."))
+
+```
+
+
+```{r}
+df_IN<- df_long[df_long$LEA_STATE == 'IN',]
+rownames(df_IN) <- NULL
+df_IN <- df_IN[, c(2,3)]
+
+
+IN<- fluidPage(h2(strong("Indiana")),DT::dataTableOutput("df_IN"), h4("The state of Indiana mandates by law identifying and serving “high ability students.” This mandate is partially funded. Students Missing From Gifted Education Identification: 23% at the Lower Boundary. Grade: Fail. Rank: 9Indiana identified 126,906 students as gifted in 2016. Statewide, the numberof missing students in schools that do not identify and in schools that underidentify ranges from 37,645 to 94,544, (23% to 43%) with most of these missing students coming from Title I schools and from underserved populations. For example, 6,221 Black children are identified, with 12,157 to 20,853 (66% to 77%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsEven with a mandate to identify and serve, 15% of the children attending approximately 20% of the schools in Indiana have no opportunity for identification. Black youth disproportionately attend these schools. In schoolswhere identification occurs, a large percentage of students are identified, especially in Non-Title I schools. With a ratio of 0.58 of identification in Title I to Non-Title I schools, underrepresentation is exacerbated in Title I schools. Black and Latinx youth are woefully underidentified in Indiana. These data make it clear that policy and practice reforms are needed to address identification, access, and equity across Indiana’s gifted education programming."))
+
+```
+
+```{r}
+df_IA<- df_long[df_long$LEA_STATE == 'IA',]
+rownames(df_IA) <- NULL
+df_IA <- df_IA[, c(2,3)]
+
+
+IA<- fluidPage(h2(strong("Iowa")),DT::dataTableOutput("df_IA"), h4("The state of Iowa mandates by law identifying and serving “gifted and talented children.” This mandate is fully funded. Students Missing From Gifted Education Identification: 15% at the Lower Boundary. Grade: Pass. Rank: 2Iowa identified 44,078 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 7,511 to 15,578, (15% to 26%) with most of these missing students coming from Title I schools and from underserved populations. For example, 849 Black children are identified, with 1,821 to 2,535 (68% to 75%) missing. These numbers are detailed in the table above and in the accompanying state report. Key Findings and RecommendationsWith a mandate and full funding for identification and services, Iowa ranks second nationally in access to identification with 94% of its students attending schools that identify students with gifts and talents. Iowa also ranks second in missingness. However, disparity between Title I and Non- Title I schools in identification rates exists with a ratio of 0.68. Further all “Brown” children (AIAN, Black, Latinx, NHPI, and to some extent TMR) in Iowaface underrepresentation in identification and this underrepresentation is notdue to lack of access. It is clear that Iowa needs to review its policies, examine its identification procedures and its equity, and reform its gifted education programs to be much more inclusive and equitable."))
+
+```
+
+```{r}
+df_KS<- df_long[df_long$LEA_STATE == 'KS',]
+rownames(df_KS) <- NULL
+df_KS <- df_KS[, c(2,3)]
+
+
+KS<- fluidPage(h2(strong("Kansas")),DT::dataTableOutput("df_KS"), h4("The state of Kansas mandates by law identifying, but not serving “gifted students.” This mandate is partially funded. Students Missing From Gifted Education Identification: 25% at the Lower Boundary. Grade: Fail. Rank: 14Kansas identified 12,643 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 4,145 to 7,940, (25% to 39%) with most of these missing students coming from Title I schools and from underserved populations. For example, 294 Black children were identified, with 772 to 1,159 (72% to 80%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsAlthough it has a law mandating identification of students with gifts and talents, Kansas identifies relatively few students and even fewer students who attend Title I schools or who are AIAN, Black, or Latinx. Another area of inequity in Kansas is the disproportionate number of Title I schools that do not identify any students with gifts and talents, a rate approximately one-fifth that of Non-Title I schools (ratio 0.17). Taken together, these data make it clear that policy and practice reforms are needed in Kansas’s gifted identification, access, and equity."))
+
+```
+
+```{r}
+df_KY<- df_long[df_long$LEA_STATE == 'KY',]
+rownames(df_KY) <- NULL
+df_KY <- df_KY[, c(2,3)]
+
+
+KY<- fluidPage(h2(strong("Kentucky")),DT::dataTableOutput("df_KY"), h4("The state of Kentucky mandates by law identifying and serving “exceptional students.” This mandate is partially funded.Students Missing From Gifted Education Identification: 15% at the Lower Boundary. Grade: Pass. Rank: 1Kentucky identified 94,851 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 16,129 to 33,045, (15% to 26%) with most of these missing students coming from Title I schools and from underserved populations. For example, 3,632 Black children are identified, with 7,173 to 9,870 (66% to 73%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsKentucky has good access to gifted identification overall, with about 93% of students having the opportunity for identification. Still slightly fewer (10%) Black and Latinx students attend schools that do identify, which partially explains their missingness in the state of Kentucky. Further, although there is a difference between Title I and Non-Title I school identification rates with a ratio of 0.78, this equity measure is improving and much better than most other states. With small populations of NHPI and AIAN, a focus on the underrepresentation of Black and Latinx students is warranted. With only 3,632 Black students identified and between 7,173 and 9,870 missing and anoverall RI of .41, equity is a serious issue in Kentucky. With an RI of .43, 2,418 identified and the number of students missing between 3,670 and 5,190, equity is a serious issue for Latinx students as well. Clearly, considered together, these data make it clear that policy and practice reforms are needed in Kentucky’s gifted identification and equity."))
+
+```
+
+```{r}
+df_LA<- df_long[df_long$LEA_STATE == 'LA',]
+rownames(df_LA) <- NULL
+df_LA <- df_LA[, c(2,3)]
+
+
+LA<- fluidPage(h2(strong("Louisiana")),DT::dataTableOutput("df_LA"), h4("The state of Louisiana mandates by law identifying and serving “gifted youth.” This mandate is partially funded. Students Missing From Gifted Education Identification: 26% at the Lower Boundary. Grade: Fail. Rank: 16  Louisiana identified 29,600 students as gifted in 2016. Statewide, the number of missing students in schools that do notschools that underidentify ranges from 10,108 to 42,364, (26% to 59%) with most of these missing students coming from Title I schools and from underserved populations. For example, 7,017 Black children are identified, with 8,036 to 24,490 (53% to 78%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and Recommendations Despite having a mandate for identification, only 86.70% of students attend schools that identify children, with fewer Black children attending schools that identify. Additionally, this state has severe inequity between Title I and Non-Title I schools, with Title I schools only identifying 40% the number of students as Non-Title I schools, a contribution to underrepresentation and to missing students. Louisiana has about the same number of Black and White children in its schools, yet it identifies more than 2.5 times the number of White children as gifted. Taken together, these data make it clear that policyand practice reforms are needed in Louisiana’s gifted identification, access, and equity."))
+
+```
+
+```{r}
+df_ME<- df_long[df_long$LEA_STATE == 'ME',]
+rownames(df_ME) <- NULL
+df_ME <- df_ME[, c(2,3)]
+
+
+ME<- fluidPage(h2(strong("Maine")),DT::dataTableOutput("df_ME"), h4("The state of Maine mandates by law identifying and serving “gifted and talented children.” This mandate is partially funded. Students Missing From Gifted Education Identification: 23% at the Lower Boundary. Grade: Fail. Rank: 8 Maine identified 9,528 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 2,816 to 4,058, (23% to 30%) with most of these missing students coming from Title I schools and from underserved populations. For example, 147 Black children are identified, with 262 to 315 (64% to 68%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsWith about 160,000 of its almost 178,000 school children identified as White,Maine lacks diversity in general. With a mandate for identification, and only 79.64% of its children attending schools that identify, lack of access is a problem in Maine, especially for AIAN students who attend these schools at alower rate than students of other races. Title I schools identify proportionally fewer students than do Non-Title I schools, adding to existing racial underrepresentation of AIAN, Black, and Latinx students. Missingness exists for all racial groups and disproportionately so for AIAN, Black, and Latinx students. Maine needs to examine access and equity in gifted education."))
+
+```
+
+
+```{r}
+df_MD<- df_long[df_long$LEA_STATE == 'MD',]
+rownames(df_MD) <- NULL
+df_MD <- df_MD[, c(2,3)]
+
+
+MD<- fluidPage(h2(strong("Maryland")),DT::dataTableOutput("df_MD"), h4("The state of Maryland mandates by law identifying and serving “gifted and talented students.” This mandate is not funded. Students Missing From Gifted Education Identification: 38% at the Lower Boundary. Grade: Fail. Rank: 27Maryland identified 151,245 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 91,225 to 125,981, (38% to 45%) with most of these missing students coming from Title I schools and from underserved populations. For example, in 2016, 33,865 Black children were identified, with 41,830 to 59,695 (55% to64%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsMaryland has, in general, declined in its equity and access to gifted identification, with fewer schools identifying students over time. Maryland identifies a greater percentage of students as gifted than any other state. For students who attend Non-Title I schools that identify students, 3 in 10 students are identified as gifted; whereas,if students are attending Title I schools, this number drops to fewer than 2 in 10 students. Additionally, AIAN, Black, and Latinx student are disproportionately underidentified. Taken together, these data make it clear that policy and practice reforms are needed in Maryland’s gifted identification, access, and equity."))
+
+```
+
+
+```{r}
+df_MA<- df_long[df_long$LEA_STATE == 'MA',]
+rownames(df_MA) <- NULL
+df_MA <- df_MA[, c(2,3)]
+
+
+MA<- fluidPage(h2(strong("Massachusetts")),DT::dataTableOutput("df_MA"), h4("In the state of Massachusetts, no mandate or funding exists to identify or serve “academically advanced students.” In fact, so few students are identified, data are insufficient for equity investigation. Students Missing From Gifted Education Identification: 93% at the Lower Boundary. Grade: Fail. Rank: 48In Massachusetts fewer than 5% of students have access to identification, of these students 6,739 children were identified as gifted in 2016, at an average identification rate of 16.99%. The statewide and Non-Title I school identification rates are inflated because of lack of access for more than 95% of the student population. Because of this, numbers were calculated using the national lower boundary rate of 9.57% and national upper boundary rate of 13.46%. Using these rates, the number of missing students in schools thatdo not identify ranges from 87,405 to 122,933 (93% to 95%). These numbersare detailed in the table above and in the accompanying state report.Key Findings and RecommendationsMassachusetts identifies so few students with gifts and talents, the only conclusions that can be drawn with certainty are: (1) access to being identified in Massachusetts is extremely limited, as more than 95% of students attend schools where no children with gifts and talents are identified; and (2) with only 6,739 students identified in the entire state of Massachusetts, upwards of 87,405 to 122,933 students are missing from gifted education in this state. Clearly Massachusetts needs access, followed by equity, and programming to develop the gifts and talents of its public schoolchildren."))
+
+```
+
+
+```{r}
+df_MI<- df_long[df_long$LEA_STATE == 'MI',]
+rownames(df_MI) <- NULL
+df_MI <- df_MI[, c(2,3)]
+
+
+MI<- fluidPage(h2(strong("Michigan")),DT::dataTableOutput("df_MI"), h4("In the state of Michigan, there is no mandate or funding for identifying and serving “gifted and/or academically talented youth.”Students Missing From Gifted Education Identification: 90% at the Lower Boundary. Grade: Fail. Rank: 46Michigan identified 19,641 students as gifted in 2016. Statewide, the numberof missing students in schools that do not identify and in schools that underidentify ranges from 174,273 to 230,105, (90% to 92%) with most of these missing students coming from Title I schools and from underserved populations. For example, 591 Latinx children are identified, with 13,312 to 17,390 (96% to 97%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsRanking 47th nationally for missingness, Michigan has very few schools that actually identify students with gifts and talents, and for those that do, Black and Latinx students are less likely than other students to attend these schools. For Black students who attend schools that identify, there is proportional identification, a rare finding. With only 19,641 students identified, large numbers of students (i.e., from 174,000 to 230,000) are missing from gifted identification because so few schools identify, because ofinequity within those schools that do, and because of inequity between Non-Title I and Title I schools. Michigan needs policy, laws, and commitment to developing the strengths and talents of its diverse populations of students. Because of the low number of schools that identify, these findings must be taken with caution."))
+
+```
+
+
+```{r}
+df_MN<- df_long[df_long$LEA_STATE == 'MN',]
+rownames(df_MN) <- NULL
+df_MN <- df_MN[, c(2,3)]
+
+
+MN<- fluidPage(h2(strong("Minnesota")),DT::dataTableOutput("df_MN"), h4("The state of Minnesota mandates by law identifying but not serving “gifted andtalented students/learners.” This mandate is partially funded. Students Missing From Gifted Education Identification: 49% at the Lower Boundary. Grade: Fail. Rank: 33Minnesota identified 69,691 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and inschools that underidentify ranges from 67,131 to 71,114, (49% to 51%) with most of these missing students coming from Title I schools and from underserved populations. For example, 4,401 Latinx children are identified, with 6,916 to 7,479 (61% to 63%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsWith its mandate to identify students with gifts and talents, only slightly more than half of Minnesota’s districts do so and about 50% of Minnesota’s gifted youth are missing from gifted identification. Inequity exists, especially for AIAN youth, in access to schools where identification takes place, and when they attend schools in which youth are identified, they are underrepresented. Additionally, Black, Latinx, and NHPI are underrepresented and missing. Together these findings underscore the need to examine policies and practices concerning how and where AIAN youth are identified with gifts and talents in Minnesota. Additionally, with as many students in Minnesota missing from gifted identification as are identified, access and equity need attention in this state."))
+
+```
+
+
+```{r}
+df_MS<- df_long[df_long$LEA_STATE == 'MS',]
+rownames(df_MS) <- NULL
+df_MS <- df_MS[, c(2,3)]
+
+
+MS<- fluidPage(h2(strong("Mississippi")),DT::dataTableOutput("df_MS"), h4("The state of Mississippi mandates by law identifying and serving “gifted children.” This mandate is partially funded. Students Missing From Gifted Education Identification: 38% at the Lower Boundary. Grade: Fail. Rank: 28Mississippi identified 33,207 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 20,065 to 29,160, (38% to 47%) with most of these missing students coming from Title I schools and from underserved populations. For example, 9,592 Black children are identified, with 13,464 to 20,246 (58% to 68%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsDespite mandating identification of students with gifts and talents, only 72% of students have access to identification and this access is equitable across races. However, in Mississippi, students who attend Title I schools are identified at a rate less than those who attend Non-Title I schools (0.72). White children are identified proportionally at rates more than two times thatof Black students and twice that of Latinx children. In fact, Black children are so underrepresented that they comprise more than 20,000 of the 29,000 students missing as gifted. Policies and procedures need to be reviewed withan equity lens to determine why Mississippi has such inequities in its identification of children with gifts and talents."))
+
+```
+
+```{r}
+df_MO<- df_long[df_long$LEA_STATE == 'MO',]
+rownames(df_MO) <- NULL
+df_MO <- df_MO[, c(2,3)]
+
+
+MO<- fluidPage(h2(strong("Missouri")),DT::dataTableOutput("df_MO"), h4("In the state of Missouri, no mandate exists to identify or serve “gifted children.” Yet, there is partial funding for gifted programs. Students Missing From Gifted Education Identification: 35% at the Lower Boundary. Grade: Fail. Rank: 22Missouri identified 36,532 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 19,281 to 33,895, (35% to 48%) with most of these missing students coming from Title I schools and from underserved populations. For example, only 2,774 Black children are identified, with 5,512to 8,345 (66% to 75%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsEven without a mandate, almost 71% of Missouri’s students have access to be identified with gifts and talents. However, as in many other states, they are more likely to be identified if they attend a Non-Title I school, and if they are White or Asian. Inequitable representation exists in Missouri of students who attend impoverished schools, or who come from AIAN, Black, Latinx, or NHPI families. Clearly, examination of identification practices, policies, and procedures is warranted. Twice as many Black children are missing as are identified as gifted at the lower boundary, and this increases to more than three times at the upper boundary; similar patterns exist for NHPI youth and to a lesser extent for Latinx children."))
+
+```
+
+
+```{r}
+df_MT<- df_long[df_long$LEA_STATE == 'MT',]
+rownames(df_MT) <- NULL
+df_MT <- df_MT[, c(2,3)]
+
+
+MT<- fluidPage(h2(strong("Montana")),DT::dataTableOutput("df_MT"), h4("The state of Montana mandates by law identifying and serving “gifted and talented children.” This mandate is not funded. Students Missing From Gifted Education Identification: 49% at the Lower Boundary. Grade: Fail. Rank: 34 Montana identified 4,945 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 4,666 to 4,836, (49%) with most of these missing students coming from schools that do not identify and from underserved populations. For example, only 179 AIAN children were identified, with 916 to953 (84%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsResults from Montana are encouraging concerning equity between Title I andnon-Title I schools; however, equity for Latinx and AIAN youth are cause for concern. With approximately 53% of students having access to identification,only 28% of AIAN youth have access, which contributes to their severe underrepresentation among youth identified with gifts and talents. In all, Montana is missing about as many students as it identifies. Review of practices and compliance with the mandate is clearly warranted, as Montanamandates identification, but only slightly more than 52% of its schools actually identify students with gifts and talents."))
+
+```
+
+```{r}
+df_NE<- df_long[df_long$LEA_STATE == 'NE',]
+rownames(df_NE) <- NULL
+df_NE <- df_NE[, c(2,3)]
+
+
+NE<- fluidPage(h2(strong("Nebraska")),DT::dataTableOutput("df_NE"), h4("The state of Nebraska mandates by law identifying but not serving “learners with high ability.” This mandate is partially funded. Students Missing From Gifted Education Identification: 26% at the Lower Boundary. Grade: Fail. Rank: 17Nebraska identified 35,778 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 12,271 to 19,419, (26% to 35%) with most of these missing students coming from Title I schools and from underserved populations. For example, 154 AIAN children are identified, with 453 to 623 (75% to 80%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsDespite a mandate to identify students with gifts and talents, only 83% of Nebraska’s students attend schools in which identification takes place. Further, inequity exists between Non-Title I and Title I schools regarding percentage of students identified, with Non-Title I schools identifying more than double the percentage students identified in Title I schools. RIs by race and locale show underrepresentation of AIAN, Black, and Latinx students whoare identified on average at about half thee rate that would be equitable (0.45, 0.51, 0.49, respectively). These data make it clear that Nebraska needs to reform policy and procedures concerning access, equity, and identification in gifted education statewide"))
+
+```
+
+```{r}
+df_NV<- df_long[df_long$LEA_STATE == 'NV',]
+rownames(df_NV) <- NULL
+df_NV <- df_NV[, c(2,3)]
+
+
+NV<- fluidPage(h2(strong("Nevada")),DT::dataTableOutput("df_NV"), h4("The state of Nevada mandates by law identifying and serving “gifted and talented pupils.” This mandate is partially funded. Students Missing From Gifted Education Identification: 24% at the Lower Boundary. Grade: Fail. Rank: 12Nevada identified 24,566 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 7,648 to 10,903, (24% to 31%) with most of these missing students coming from Title I schools and from underserved populations. For example, 1,050 Black children are identified, with 1,796 to 2,358 (63% to 69%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsWith a mandate to identify and serve students with gifts and talents, more than 90% of Nevada’s youth have access to gifted identification. Comparatively, Nevada identifies fewer students than the national average, and inequity exists between Non-Title I and Title I schools regarding percentage of students identified—though this inequity has improved dramatically during the past 4 years. Further, Nevada underidentifies children from AIAN, Black, and Latinx racial groups. These data make it clear that Nevada needs to reform policy and procedures concerning equity and identification in gifted education statewide."))
+
+```
+
+```{r}
+df_NH<- df_long[df_long$LEA_STATE == 'NH',]
+rownames(df_NH) <- NULL
+df_NH <- df_NH[, c(2,3)]
+
+
+NH<- fluidPage(h2(strong("New Hampshire")),DT::dataTableOutput("df_NH"), h4("The state of New Hampshire does not mandate, nor does it fund, identifying or serving “gifted and talented students.” Students Missing From Gifted Education Identification: 91% at the Lower Boundary. Grade: Fail. Rank: 47New Hampshire identified 2,014 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 19,857 to 20,266, (91%) with most of these missing students coming from schools that do not identify, Title I schools, and from underserved populations. For example, 38 Latinx children were identified, with 1,134 to 1,157 (97%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsNew Hampshire identifies students from so few schools that making any meaningful sense from its data is challenging. Still, among the approximately2000 youth identified statewide, disproportionality exists for students who are AIAN, Black, and Latinx. Clearly, many youth with high potential exist in New Hampshire who will go unidentified and unserved until this state implements policies and encourages practices to equitably identify and provide access to gifted education services."))
+
+```
+
+```{r}
+df_NJ<- df_long[df_long$LEA_STATE == 'NJ',]
+rownames(df_NJ) <- NULL
+df_NJ <- df_NJ[, c(2,3)]
+
+
+NJ<- fluidPage(h2(strong("New Jersey")),DT::dataTableOutput("df_NJ"), h4("The state of New Jersey mandates by law identifying and serving “gifted and talented students.” This mandate is not funded. Students Missing From Gifted Education Identification: 52% at the Lower Boundary. Grade: Fail. Rank: 38New Jersey identified 80,037 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 87,181 to 93,338, (52% to 54%) with some ofthese missing students coming from Title I schools and from underserved populations. For example, 6,263 Black children are identified, with 18,777 to 20,158 (75% to 76%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsDespite a mandate to identify and serve students with gifts and talents, only half of New Jersey’s students have access to gifted identification; however, compared with the nation and many other states, moderate equity exists between Non-Title I and Title I schools regarding the percentage of students identified. RIs by race and locale show underrepresentation. New Jersey’s largest underserved racial population is Latinx youth with an overall RI of 0.65 followed by AIAN and Black youth with overall RIs of 0.67. Black and Latinx representation is affected by their disproportional lack of access to schools that have identification of youth with gifts and talents. These data make it clear that New Jersey needs to reform policy and procedures concerning access, equity, and identification in gifted education statewide."))
+
+```
+
+```{r}
+df_NM<- df_long[df_long$LEA_STATE == 'NM',]
+rownames(df_NM) <- NULL
+df_NM <- df_NM[, c(2,3)]
+
+
+NM<- fluidPage(h2(strong("New Mexico")),DT::dataTableOutput("df_NM"), h4("The state of New Mexico mandates by law identifying and serving “gifted children.” This mandate is partially funded. Students Missing From Gifted Education Identification: 28% at the Lower Boundary. Grade: Fail. Rank: 21New Mexico identified 16,239 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 6,211 to 23,801, (28% to 59%) with most of these missing students coming from Title I schools and from underserved populations. For example, 7,056 Latinx children are identified, with 4,435 to 17,333 (39% to 71%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsDespite having a mandate to identify and serve youth with gifts and talents, approximately 14% of students have no opportunity for identification because they attend schools where no students are identified. Additionally, Non-Title I schools identify more than double the percentage of students as gifted than do Title I schools. Third, AIAN, Black, and Latinx students are consistently underrepresented in New Mexico schools. Together this means that New Mexico has access and equity problems in its approach to identifying and serving gifted children. Reforms to policy and practice are warranted."))
+
+```
+
+
+```{r}
+df_NY<- df_long[df_long$LEA_STATE == 'NY',]
+rownames(df_NY) <- NULL
+df_NY <- df_NY[, c(2,3)]
+
+
+NY<- fluidPage(h2(strong("New York")),DT::dataTableOutput("df_NY"), h4("The state of New York does not mandate nor does it fund identifying or serving “gifted pupils.” Students Missing From Gifted Education Identification: 89% at the Lower Boundary. Grade: Fail. Rank: 45New York identified 43,802 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 260,680 to 344,888, (86% to 89%) with most of these missing students coming from schools that do not identify and from underserved populations. For example, 4,651 Latinx children are identified, with 70,802 to 94,583 (94% to 95%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsWith no mandate or funding, New York has only a few schools (10%) that identify youth with gifts and talents. Among these schools, however, there are encouraging data. First, New York, is one of only four states in which students attending Title I schools are identified at a higher rate than those in  Non-Title I schools. Second, Black youth are identified proportionately in these Title I schools (0.99), but not in Non-Title I schools (0.40), and proportional identification of Black youth in any setting is rare in the United States. The same is not true for Latinx students in New York, who are underrepresented in all settings. Despite these encouraging findings, the reality is that almost 90% of the students who attend public schools in New York have no access to identification. Clearly New York needs policies, laws, and programs to reach these students and to increase access and equity for its students."))
+
+```
+
+```{r}
+df_NC<- df_long[df_long$LEA_STATE == 'NC',]
+rownames(df_NC) <- NULL
+df_NC <- df_NC[, c(2,3)]
+
+
+NC<- fluidPage(h2(strong("North Carolina")),DT::dataTableOutput("df_NC"), h4("The state of North Carolina mandates by law identifying and serving “academically or intellectually gifted students.” This mandate is partially funded. Students Missing From Gifted Education Identification: 25% at the Lower Boundary. Grade: Fail. Rank: 15North Carolina identified 170,771 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 56,739 to 133,773, (25% to 44%) with most of these missing students coming from Title I schools and from underserved populations. For example, 17,376 Black children are identified, with 29,973 to 60,727 (59% to 75%) missing. These numbers are detailed in the table above and in the accompanying state report.Key Findings and RecommendationsThe good news is that more than 90% of North Carolina youth and more than90% of North Carolina schools identify students for gifted education services.Additionally, any underrepresentation noted is not due to lack of access to identification either by race of type of school attended. However, despite these positive findings, disproportionality exists in North Carolina between Title I and Non-Title I schools, with Title I schools identifying less than half the percentage of students as their Non-Title I counterparts. Additionally, Black, Latinx, and to some extent AIAN children are severely underrepresented in North Carolina regardless of school type or locale. Because of this disproportionality, large numbers of these youth are missing from identification. Clearly North Carolina needs to examine policies and practices and determine which of these has impacted identification and led to inequity among races and between Title I and Non-Title I schools."))
+
+```
+
+```{r}
+df_ND<- df_long[df_long$LEA_STATE == 'ND',]
+rownames(df_ND) <- NULL
+df_ND <- df_ND[, c(2,3)]
+
+
+ND<- fluidPage(h2(strong("North Dakota")),DT::dataTableOutput("df_ND"), h4("The state of North Dakota does not mandate identifying or serving “gifted children.” Yet, there is partial funding for gifted programs. 
+Students Missing From Gifted Education Identification: 71% at the Lower Boundary. Grade: Fail. Rank: 42
+North Dakota identified 2,861 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 7,062 to 8,264, (71% to 74%) with most of these missing students coming from Title I schools and from underserved populations. For example, 47 Latinx children are identified, with 365 to 426 (89% to 90%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Without legislation for gifted identification or services, only about 30% of children from North Dakota even attend a school where they could be identified. Disproportionality exists between Title I and Non-Title I schools and across races concerning proportionality of students who are identified. A student who attends a Title I school in North Dakota and who is AIAN, Black, Latinx, or Two or More Races is less likely to be identified than those in Non-Title Schools and who are White or Asian. And large numbers of all children are missing from gifted identification due to lack of access. Clear policy changes are needed to give access to, and equitably identify and serve, students with gifts and talents in North Dakota."))
+
+```
+
+```{r}
+df_OH<- df_long[df_long$LEA_STATE == 'OH',]
+rownames(df_OH) <- NULL
+df_OH <- df_OH[, c(2,3)]
+
+
+OH<- fluidPage(h2(strong("Ohio")),DT::dataTableOutput("df_OH"), h4("The state of Ohio mandates by law identifying and serving “gifted students.” This mandate is partially funded. 
+Students Missing From Gifted Education Identification: 37% at the Lower Boundary. Grade: Fail. Rank: 26
+Ohio identified 109,491 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 64,482 to 121,293, (37% to 53%) with most of these missing students coming from Title I schools and from underserved populations. For example, 4,348 Black children are identified, with 21,268 to 32,496 (83% to 88%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Even with a mandate to identify and serve gifted students, only 69% of Ohio’s students have access to be identified. Further, disparity exists between Non-Title I and Title I identification rates, with Non-Title I schools identifying 40% more students than Title I schools. Add to that underrepresentation among all Brown and Black youth, and Black youth being less likely to attend schools where identification occurs, and Ohio faces serious issues of access and equity among its gifted policies and procedures. Clearly, these inequities warrant reform."))
+
+```
+
+```{r}
+df_OK<- df_long[df_long$LEA_STATE == 'OK',]
+rownames(df_OK) <- NULL
+df_OK <- df_OK[, c(2,3)]
+
+
+OK<- fluidPage(h2(strong("Oklahoma")),DT::dataTableOutput("df_OK"), h4("The state of Oklahoma mandates by law identifying and serving “gifted and talented children.” This mandate is fully funded. 
+Students Missing From Gifted Education Identification: 17% at the Lower Boundary. Grade: Pass. Rank: 3
+Oklahoma identified 96,726 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 19,449 to 60,725, (17% to 39%) with most of these missing students coming from Title I schools and from underserved populations. For example, 9,247 Latinx children are identified, with 7,337 to 15,631 (44% to 63%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+With mandated services, Oklahoma has consistently had access to identification for more than 90% of its students. Additionally, Oklahoma is one of the few places where there is equity in identification of AIAN youth with gifts and talents. This is noteworthy, as Oklahoma has the 2nd largest proportion of AIAN youth in relation to student enrollment and the largest by population (14.52%, 100,993). Perhaps others can learn how Oklahoma has achieved equity for these students. Still Oklahoma has problems with underrepresentation of Black and Latinx youth, and inequity exists between the percentages of students identified in Title I and Non-Title I settings. Together, these data make it clear that policy work is needed in Oklahoma to ensure access and equity in gifted education to all students.
+"))
+
+```
+
+```{r}
+df_OR<- df_long[df_long$LEA_STATE == 'OR',]
+rownames(df_OR) <- NULL
+df_OR <- df_OR[, c(2,3)]
+
+
+OR<- fluidPage(h2(strong("Oregon")),DT::dataTableOutput("df_OR"), h4("The state of Oregon mandates by law identifying and serving “talented and gifted children.” This mandate is not funded. 
+
+Students Missing From Gifted Education Identification: 27% at the Lower Boundary. Grade: Fail. Rank: 20
+Oregon identified 33,111 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 12,534 to 21,475, (27% to 39%) with most of these missing students coming from Title I schools and from underserved populations. For example, 2,759 Latinx children are identified, with 6,332 to 9,105 (70% to 77%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Oregon, with its mandate for identification and services, has moderate access for identification, with 82% of its students attending a school where identification takes place. However, the equity between Title I and Non-Title I schools is nonexistent, with Non-Title I schools identifying 3 times the percentage of their students than Title I schools. RIs for AIAN, Black, NHPI, and especially Latinx students reveal large proportional underrepresentation of these students among those identified with gifts and talents. It is interesting to note that attending a Title I school improves proportional representation for all races, but in Oregon, Title I schools only identify about one-third the percentage of Non-Title I schools. Clearly, Oregon needs to examine and reform its policies concerning equity and identification statewide.
+
+"))
+
+```
+
+
+```{r}
+df_PA<- df_long[df_long$LEA_STATE == 'PA',]
+rownames(df_PA) <- NULL
+df_PA <- df_PA[, c(2,3)]
+
+
+PA<- fluidPage(h2(strong("Pennsylvania")),DT::dataTableOutput("df_PA"), h4("The state of Pennsylvania mandates by law identifying and serving “gifted students.” This mandate is not funded. 
+Students Missing From Gifted Education Identification: 26% at the Lower Boundary. Grade: Fail. Rank: 18
+Pennsylvania identified 60,033 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 21,201 to 45,156, (26% to 43%) with most of these missing students coming from Title I schools and from underserved populations. For example, 2,014 Black children are identified, with 9,005 to 13,226 (82% to 87%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+In Pennsylvania, 81% of all students attend a school in which they have the opportunity to be identified with gifts and talents; however, this percentage is only 59% for Black students, whose RI is 0.38 among schools that identify. At the Lower Boundary estimate, Black students are missing at more than 3 times the rate of those identified for the state as a whole. Additionally, Title I schools identify at 0.63 the rate of Non-Title I schools. Further, Latinx students are underrepresented with an RI of 0.37. Despite having a mandate to identify and serve youth with gifts and talents, inequity exists across the state in who is identified. Clearly, Pennsylvania needs to reform policy and procedures to address issues of access and equity in its gifted education programs.
+
+"))
+
+```
+
+
+```{r}
+df_RI<- df_long[df_long$LEA_STATE == 'RI',]
+rownames(df_RI) <- NULL
+df_RI <- df_RI[, c(2,3)]
+
+
+RI<- fluidPage(h2(strong("Rhode Island")),DT::dataTableOutput("df_RI"), h4("The state of Rhode Island does not mandate identifying or serving, “gifted and talented students.” It does, however, have language for local districts concerning gifted education. 
+Students Missing From Gifted Education Identification: 99% at the Lower Boundary. Grade: Fail. Rank: 50
+In Rhode Island, fewer than 5% of students have access to identification. Of these students, 148 children were identified as gifted in 2016 at an average identification rate of 9.61%. Due to this very small number of students, equity calculations are not appropriate. Numbers of students missing from gifted identification in Rhode Island were calculated using the national lower boundary rate of 9.57% and upper boundary rate of 13.46%. Using these rates, the number of missing students in Rhode Island is estimated to be between 13,402 and 18,902 (99%). These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Rhode Island is without policy or procedures for identifying and developing gifted and talented students in its state. As such, almost 20,000 potentially talented youth (and probably more) attending its schools have no access to gifted education services. Clearly, policy is needed to create access and equity for youth with gifts and talents in Rhode Island.
+
+
+"))
+
+```
+
+
+
+```{r}
+df_SC<- df_long[df_long$LEA_STATE == 'SC',]
+rownames(df_SC) <- NULL
+df_SC <- df_SC[, c(2,3)]
+
+
+SC<- fluidPage(h2(strong("South Carolina")),DT::dataTableOutput("df_SC"), h4("
+The state of South Carolina mandates by law identifying and serving “gifted and talented students.” This mandate is partially funded. 
+Students Missing From Gifted Education Identification: 24% at the Lower Boundary. Grade: Fail. Rank: 13
+South Carolina identified 118,013 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 37,592 to 58,054, (24% to 33%) with most of these missing students coming from Title I schools and from underserved populations. For example, 20,160 Black children are identified, with 25,055 to 38,766 (55% to 66%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+With its mandate to identify and serve students with gifts and talents, more than 90% of South Carolina’s students have access to gifted identification, including equitable access among racial groups. However, inequity exists between Non-Title I and Title I schools regarding percentage of students identified with one of the worst ratios in the country. RIs by race and locale show underrepresentation, especially of Black and Latinx youth who are both identified at about half an equitable rate. These data make it clear that South Carolina needs to reform policy and procedures concerning access, equity, and identification in gifted education statewide.
+
+
+"))
+
+```
+
+
+```{r}
+df_SD<- df_long[df_long$LEA_STATE == 'SD',]
+rownames(df_SD) <- NULL
+df_SD <- df_SD[, c(2,3)]
+
+
+SD<- fluidPage(h2(strong("South Dakota")),DT::dataTableOutput("df_SD"), h4("
+The state of South Dakota does not mandate or fund identifying and serving “gifted and talented children.” 
+Students Missing From Gifted Education Identification: 73% at the Lower Boundary. Grade: Fail. Rank: 43
+South Dakota identified 2,683 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 7,084 to 9,321, (73% to 78%) with most of these missing students coming from Title I schools and from schools that do not identify. For example, 56 AIAN children are identified, with 983 to 1,287 (95% to 96%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+
+Key Findings and Recommendations
+With no mandate in South Dakota, only 29% of students attend schools that identify youth with gifts and talents—and AIAN youth are 25% less likely than others to attend these schools. Although the numbers of AIAN (4th largest population by proportion and 11th largest by number of students), Black, and Latinx youth are not large, their underrepresentation in South Dakota is. The average RI for AIAN youth is 0.26; for Black youth is 0.18; and for Latinx youth is 0.21, some of the lowest RIs in the country. These youth are only identified at rates of one-fourth to less than one-fifth of an equitable rate. Finally, the disparity between Non-Title I and Title I identification rates (0.57) is large and contributes to underidentification of students who attend Title I schools. South Dakota needs to develop policies and procedures that promote access and equity within gifted education identification and programming—especially for its AIAN youth.
+
+
+"))
+
+```
+
+
+```{r}
+df_TN<- df_long[df_long$LEA_STATE == 'TN',]
+rownames(df_TN) <- NULL
+df_TN <- df_TN[, c(2,3)]
+
+
+TN<- fluidPage(h2(strong("Tennessee")),DT::dataTableOutput("df_TN"), h4("
+The state of Tennessee mandates by law identifying and serving “intellectually gifted” youth. This mandate is partially funded. 
+Students Missing From Gifted Education Identification: 50% at the Lower Boundary. Grade: Fail. Rank: 35
+Tennessee identified 15,229 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 15,407 to 41,583, (50% to 73%) with most of these missing students coming from Title I schools and from underserved populations. For example, 1,035 Black children are identified, with 5,056 to 11,453 (79% to 90%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Tennessee has, in general, declined in its equity and access to gifted identification, with fewer schools identifying students over time, fewer students being identified, and an increased difference between Title I and Non-Title I schools in the percentages of students being identified. Additionally, equity among racial groups is worsening, and even with only a small percentage of students identified with gifts and talents on average, large numbers of Black and Latinx children are missing from gifted identification in Tennessee. Taken together, these data make it clear that policy and practice reforms are needed in Tennessee’s gifted identification, access, and equity.
+
+
+"))
+
+```
+
+
+```{r}
+df_TX<- df_long[df_long$LEA_STATE == 'TX',]
+rownames(df_TX) <- NULL
+df_TX <- df_TX[, c(2,3)]
+
+
+TX<- fluidPage(h2(strong("Texas")),DT::dataTableOutput("df_TX"), h4("
+The state of Texas mandates by law identifying and serving “gifted and talented students.” This mandate is partially funded. 
+Students Missing From Gifted Education Identification: 19% at the Lower Boundary. Grade: Pass. Rank: 5
+Texas identified 404,721 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 95,324 to 252,170, (19% to 38%) with most of these missing students coming from Title I schools and from underserved populations. For example, 25,881 Black children were identified, with 28,542 to 54,571 (52% to 68%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+With a mandate to identify and serve students with gifts and talents, since 2000, approximately 94% of students in Texas attend schools that identify students with gifts and talents. However, inequity exists between Non-Title I and Title I schools regarding percentage of students identified; and RIs by race and locale show underrepresentation, especially for Black youth. Latinx students who attend Title I schools are reasonably well represented (0.90), but Title I schools in Texas identify fewer students with gifts and talents than do Non-Title I schools, where Latinx students remain underrepresented (0.59). Representation of AIAN and NHPI at 0.71 and 0.72 on average are better than in most states in the country, but still “failing” and reflecting underrepresentation. Thus, Texas needs to review policy and procedures to continue to improve equity and access for its underserved youth. This should include identification procedures, because in Texas underrepresentation is not largely due to access, but rather to underidentification in schools that do identify.
+
+
+"))
+
+```
+
+
+```{r}
+df_UT<- df_long[df_long$LEA_STATE == 'UT',]
+rownames(df_UT) <- NULL
+df_UT <- df_UT[, c(2,3)]
+
+
+UT<- fluidPage(h2(strong("Utah")),DT::dataTableOutput("df_UT"), h4("
+The state of Utah does not mandate by law identifying and serving “gifted and talented/accelerated students.” However, gifted programming is partially funded. 
+Students Missing From Gifted Education Identification: 64% at the Lower Boundary. Grade: Fail. Rank: 39
+Utah identified 31,031 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools
+that underidentify ranges from 54,992 to 67,504, (64% to 69%) with most of these missing students coming from Title I schools and from underserved populations. For example, 177 AIAN children were identified, with 732 to 879 (81% to 83%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Without a mandate to identify and serve students with gifts and talents, but with some funding, only one third of Utah’s youth have access to gifted identification. Inequity exists between Non-Title I and Title I schools regarding percentage of students identified. Although better than many other states, RIs by race and locale still show underrepresentation of AIAN, Black, and Latinx youth. Utah needs clear policies and procedures to increase access and equity for students in gifted programs statewide.
+
+"))
+
+```
+
+
+
+```{r}
+df_VT<- df_long[df_long$LEA_STATE == 'VT',]
+rownames(df_VT) <- NULL
+df_VT <- df_VT[, c(2,3)]
+
+
+VT<- fluidPage(h2(strong("Vermont")),DT::dataTableOutput("df_VT"), h4("
+The state of Vermont does not mandate or fund identifying or serving “gifted and talented children.” 
+Students Missing From Gifted Education Identification: 98% at the Lower Boundary. Grade: Fail. Rank: 49
+
+In Vermont, fewer than 5% of students have access to identification, of these students 121 children were identified as gifted in 2016 at an average identification rate of 6.15%. Missing students were calculated using the national lower boundary rate of 9.57% and upper boundary 13.46%. Using these rates, the number of missing students in schools that do not identify ranges from 7,821 to 11,044 (98% to 99%). These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Vermont is without policy or procedures for identifying and developing talented students in its state. As such, almost 11,100 potentially talented youth (and probably more) attending its schools have no access to gifted education services. Clearly, policy is needed to create access and equity for youth with gifts and talents in Vermont.
+
+"))
+
+```
+
+
+```{r}
+df_VA<- df_long[df_long$LEA_STATE == 'VA',]
+rownames(df_VA) <- NULL
+df_VA <- df_VA[, c(2,3)]
+
+
+VA<- fluidPage(h2(strong("Virginia")),DT::dataTableOutput("df_VA"), h4("
+The state of Virginia mandates by law identifying and serving “gifted students.” This mandate is partially funded. 
+Students Missing From Gifted Education Identification: 19% at the Lower Boundary. Grade: Pass. Rank: 6
+Virginia identified 160,544 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 38,834 to 53,245, (19% to 25%) with most of these missing students coming from Title I schools and from underserved populations. For example, 18,417 Black children are identified, with 21,112 to 28,645 (53% to 61%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+With a mandate to identify and serve students with gifts and talents, since 2000 approximately 93% of students in Virginia attend schools that identify students with gifts and talents. However, inequity exists between Non-Title I and Title I schools regarding percentage of students identified, with Title I schools only identifying 45% of that of Non-Title I schools. RIs by race and locale show underrepresentation, especially for Black and Latinx youth. These data make it clear that Virginia needs to reform its policies, procedures, and identification practices to address issues of equity and access (in Title I schools) statewide.
+
+
+"))
+
+```
+
+
+
+```{r}
+df_WA<- df_long[df_long$LEA_STATE == 'WA',]
+rownames(df_WA) <- NULL
+df_WA <- df_WA[, c(2,3)]
+
+
+WA<- fluidPage(h2(strong("Washington")),DT::dataTableOutput("df_WA"), h4("
+The state of Washington mandates identifying and serving “highly capable students.” This mandate is partially funded. 
+Students Missing From Gifted Education Identification: 36% at the Lower Boundary. Grade: Fail. Rank: 25
+Washington identified 51,306 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 28,948 to 30,958, (36% to 38%) with most of these missing students coming from schools that do not identify, from underserved populations, and from Title I schools. For example, 244 AIAN children were identified, with 677 to 729 (74% to 75%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Despite a mandate to identify and serve students with gifts and talents, only 72% of Washington’s students have access to gifted identification. However, inequity between Non-Title I and Title I schools is small at 0.92, meaning that, unlike many other states, students in Title I schools are identified at almost the same rate as those in Non-Title I schools. Washington has low RIs for AIAN (0.41), Black (0.37), Latinx (0.37), and NHPI (0.37) youth. These data make it clear that Washington needs to reform policy and procedures concerning access, equity, and identification in gifted education statewide.
+
+"))
+
+```
+
+
+
+```{r}
+df_WV<- df_long[df_long$LEA_STATE == 'WV',]
+rownames(df_WV) <- NULL
+df_WV <- df_WV[, c(2,3)]
+
+
+WV<- fluidPage(h2(strong("West Virginia")),DT::dataTableOutput("df_WV"), h4("
+The state of West Virginia mandates by law identifying and serving “gifted students.” This mandate is partially funded. 
+
+Students Missing From Gifted Education Identification: 27% at the Lower Boundary. Grade: Fail. Rank: 19
+West Virginia identified 5,337 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 2,020 to 3,504, (27% to 40%) with most of these missing students coming from Title I schools and from underserved populations. For example, 35 Latinx children are identified, with 76 to 100 (68% to 74%) missing. These numbers are detailed in the table above and in the accompanying state
+report.
+
+Key Findings and Recommendations
+With a mandate to identify and serve youth with gifts and talents, West Virginia identifies the lowest percentage of students of all the states at 2.7% among schools that identify. Additionally, despite having this mandate, only 75% of students attend a school where identification of students with gifts and talents takes place. In schools that identify, disproportional representation occurs between Title I and Non-Title I schools with Title I schools identifying approximately half the percentage of students as Non-Title I schools. Finally, disproportionality exists for Black and Latinx youth with overall RI at 0.49 and 0.43, respectively. These data make it clear that West Virginia needs to reform policy and procedures concerning access, equity, and identification in gifted education statewide.
+
+
+
+"))
+
+```
+
+
+
+```{r}
+df_WI<- df_long[df_long$LEA_STATE == 'WI',]
+rownames(df_WI) <- NULL
+df_WI <- df_WI[, c(2,3)]
+
+
+WI<- fluidPage(h2(strong("Wisconsin")),DT::dataTableOutput("df_WI"), h4("
+The state of Wisconsin mandates by law identifying and serving “gifted and talented pupils.” This mandate is partially funded. 
+Students Missing From Gifted Education Identification: 43% at the Lower Boundary. Grade: Fail. Rank: 31
+Wisconsin identified 45,219 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 33,773 to 37,886, (43% to 46%) with most of these missing students coming from underserved populations and from Title I schools. For example, 176 AIAN children are identified, with 715 to 803 (80% to 82%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+Despite a mandate requiring identification of youth with gifts and talents, only about 61% of Wisconsin’s youth attend schools that do so. And, 34% fewer AIAN youth attend these schools than do students from other races. Additionally, fewer students are identified in Title I than in Non- Title I schools. Together these circumstances result in severe underrepresentation of AIAN youth. Underrepresentation of Black and Latinx youth in Wisconsin also exists across both school types and in most locales with failing overall RIs of 0.55 and 0.64, respectively. Clearly, reform is needed in Wisconsin concerning access to and equity in gifted education. Policy, practices, and identification procedures need review and revision.
+
+
+
+"))
+
+```
+
+
+```{r}
+df_WY<- df_long[df_long$LEA_STATE == 'WY',]
+rownames(df_WY) <- NULL
+df_WY <- df_WY[, c(2,3)]
+
+
+WY<- fluidPage(h2(strong("Wyoming")),DT::dataTableOutput("df_Wyoming"), h4("
+The state of Wyoming does not mandate by law identifying or serving “gifted and talented children and youth.” Gifted programs are partially funded. 
+
+
+Students Missing From Gifted Education Identification: 52% at the Lower Boundary. Grade: Fail. Rank: 37
+Wyoming identified 3,676 students as gifted in 2016. Statewide, the number of missing students in schools that do not identify and in schools that underidentify ranges from 3,999 to 4,409, (52% to 55%) with most of these missing students coming from Title I schools and from underserved populations. For example, 172 Latinx children are identified, with 819 to 915 (83% to 84%) missing. These numbers are detailed in the table above and in the accompanying state report.
+
+Key Findings and Recommendations
+With no mandate to identify and serve students with gifts and talents, only half of Wyoming’s students have access to gifted identification, inequity exists between Non-Title I and Title I schools regarding percentage of students identified, and RIs by race and locale show underrepresentation. Wyoming’s largest underserved racial population is Latinx youth with an overall RI of 0.38. In addition, AIAN and Black youth are underserved with only 62 and 21 students identified from these populations. Of concern are AIAN youth, Wyoming has the 8th largest proportion of AIAN of all the states and this group of students is underidentified with less access to schools that do identify in Wyoming. Access is also a problem for Black, Latinx, and TMR students. These data make it clear that Wyoming needs to develop policies and procedures concerning access, equity, and identification in gifted education statewide.
+
+"))
+
+```
+
+
+```{r}
+ui <- navbarPage("My Application",
+  tabPanel("Component 1"),
+  tabPanel("Component 2"),
+  navbarMenu("State Summary",
+    tabPanel("Alabama", AL),
+    tabPanel("Alaska", AK),
+    tabPanel("Arizona", AZ),
+    tabPanel("Arkansas", AR),
+    tabPanel("California", CA),
+    tabPanel("Colorado", CO),
+    tabPanel("Connecticut", CT),
+    tabPanel("Delaware", DE),
+    tabPanel("DC", DC),
+    tabPanel("Florida", FL),
+    tabPanel("Georgia", GA),
+    tabPanel("Hawaii", HI),
+    tabPanel("Idaho", ID),
+    tabPanel("Illinois", IL),
+    tabPanel("Indiana", IN),
+    tabPanel("Iowa", IA),
+    tabPanel("Kansas", KS),
+    tabPanel("Kentucky", KY),
+    tabPanel("Louisiana", LA),
+    tabPanel("Maine", ME),
+    tabPanel("Maryland", MD),
+    tabPanel("Massachusetts", MA),
+    tabPanel("Michigan", MI),
+    tabPanel("Minnesota", MN),
+    tabPanel("Mississippi", MS),
+    tabPanel("Missouri", MO),
+    tabPanel("Montana", MT),
+    tabPanel("Nebraska", NE),
+    tabPanel("Nevada", NV),
+    tabPanel("New Hampshire", NH),
+    tabPanel("New Jersey", NJ),
+    tabPanel("New Mexico", NM),
+    tabPanel("New York", NY),
+    tabPanel("North Carolina", NC),
+    tabPanel("North Dakota", ND),
+    tabPanel("Ohio", OH),
+    tabPanel("Oklahoma", OK),
+    tabPanel("Oregon", OR),
+    tabPanel("Pennsylvania", PA),
+    tabPanel("Rhode Island", RI),
+    tabPanel("South Carolina", SC),
+    tabPanel("South Dakota", SD),
+    tabPanel("Tennessee", TN),
+    tabPanel("Texas", TX),
+    tabPanel("Utah", UT),
+    tabPanel("Vermont", VT),
+    tabPanel("Virginia", VA),
+    tabPanel("Washington", WA),
+    tabPanel("West Virginia", WV),
+    tabPanel("Wisconsin", WI),
+    tabPanel("Wyoming", WY))
+)
+
+
+server<-function(input, output) {
+    output$df_AK = renderDT(
+      df_AK, options = list(lengthChange = FALSE)
+    )
+    output$df_AZ = renderDT(
+      df_AZ, options = list(lengthChange = FALSE)
+    )
+    
+    output$df_AR = renderDT(
+      df_AR, options = list(lengthChange = FALSE)
+    )
+    
+    output$df_CA = renderDT(
+      df_CA, options = list(lengthChange = FALSE)
+    )
+    
+     output$df_CO = renderDT(
+      df_CO, options = list(lengthChange = FALSE)
+    )
+     
+      output$df_CT = renderDT(
+      df_CT, options = list(lengthChange = FALSE)
+    )
+      
+       output$df_DE = renderDT(
+      df_DE, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_FL = renderDT(
+      df_FL, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_GA = renderDT(
+      df_GA, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_HI = renderDT(
+      df_HI, options = list(lengthChange = FALSE)
+    )
+        
+      output$df_ID = renderDT(
+      df_ID, options = list(lengthChange = FALSE)
+    )
+         
+      output$df_IL = renderDT(
+      df_IL, options = list(lengthChange = FALSE)
+    )
+          
+      output$df_IN = renderDT(
+      df_IN, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_IA = renderDT(
+      df_IA, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_KS = renderDT(
+      df_KS, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_KY = renderDT(
+      df_KY, options = list(lengthChange = FALSE)
+    )
+      
+       output$df_LA = renderDT(
+      df_LA, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_ME = renderDT(
+      df_ME, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_MD = renderDT(
+      df_MD, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_MA = renderDT(
+      df_LA, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_MI = renderDT(
+      df_ME, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_MN = renderDT(
+      df_MD, options = list(lengthChange = FALSE)
+    )
+      
+       output$df_MS = renderDT(
+      df_MS, options = list(lengthChange = FALSE)
+    )
+       
+        output$df_MT = renderDT(
+      df_MT, options = list(lengthChange = FALSE)
+    )
+      
+      output$df_NE = renderDT(
+      df_NE, options = list(lengthChange = FALSE)
+    )
+   
+       output$df_NV = renderDT(
+      df_NV, options = list(lengthChange = FALSE)
+    )
+       
+        output$df_NH = renderDT(
+      df_NH, options = list(lengthChange = FALSE)
+    )
+       
+        output$df_NJ = renderDT(
+      df_NJ, options = list(lengthChange = FALSE)
+    )
+   
+       output$df_NM = renderDT(
+      df_NM, options = list(lengthChange = FALSE)
+    )
+       
+        output$df_NY = renderDT(
+      df_NY, options = list(lengthChange = FALSE)
+    )
+      
+        
+       output$df_NC = renderDT(
+      df_NC, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_ND = renderDT(
+      df_ND, options = list(lengthChange = FALSE)
+    )
+      
+       output$df_OH = renderDT(
+      df_OH, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_OK = renderDT(
+      df_OK, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_OR = renderDT(
+      df_OR, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_PA = renderDT(
+      df_PA, options = list(lengthChange = FALSE)
+    )
+            
+       
+       output$df_RI = renderDT(
+      df_RI, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_SC = renderDT(
+      df_SC, options = list(lengthChange = FALSE)
+    )
+      
+         output$df_SD = renderDT(
+      df_SD, options = list(lengthChange = FALSE)
+    )
+            
+       
+       output$df_TN = renderDT(
+      df_TN, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_TX = renderDT(
+      df_TX, options = list(lengthChange = FALSE)
+    )
+       
+       output$df_UT = renderDT(
+      df_UT, options = list(lengthChange = FALSE)
+    )
+       
+        output$df_VT = renderDT(
+      df_VT, options = list(lengthChange = FALSE)
+    )
+        
+         output$df_VA = renderDT(
+      df_VA, options = list(lengthChange = FALSE)
+    )
+         
+         output$df_WA = renderDT(
+      df_VA, options = list(lengthChange = FALSE)
+    )
+         
+         output$df_WV = renderDT(
+      df_WV, options = list(lengthChange = FALSE)
+    )
+         
+         output$df_WI = renderDT(
+      df_WI, options = list(lengthChange = FALSE)
+    )
+         
+         output$df_WY = renderDT(
+      df_WY, options = list(lengthChange = FALSE)
+    )
+           
+            
+            
+            
+  }
+
+shinyApp(ui, server)
+
+```
+
+
+
+
+
